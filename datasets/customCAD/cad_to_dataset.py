@@ -280,24 +280,28 @@ create the dataset
 create a yaml with intrinsics and other metadata
 Output formatted like:
 	output_dir/
-		rgb/
-			sample1.png
-			sample2.png
-			...
-		depth/
-			sample1.png
-			sample2.png
-			...
-		mask/
-			sample1.png
-			sample2.png
-			...
-		meta/
-			sample1.txt
-			sample2.txt
-			...
+		data/
+			object1/
+				train.txt
+				test.txt
+				rgb/
+					sample1.png
+					sample2.png
+					...
+				depth/
+					sample1.png
+					sample2.png
+					...
+				mask/
+					sample1.png
+					sample2.png
+					...
+				gt.yaml
+				...
+		models/
+			object1.ply
 """
-def create_dataset(filename, output_dir):
+def create_dataset(filename, output_dir, num_train=15000, num_test=5000):
 	model = convert_file_to_model(filename, 0.001)
 
 	for i in range(50):
