@@ -5,14 +5,11 @@ import cv2
 import numpy as np
 import torch
 
-m = UnityMaskGenerator("dataset_processed")
-m.generate_masks()
+#m = UnityMaskGenerator("dataset_processed")
+#m.generate_masks()
 
 p = PoseDataset("train", 1000, False, 'dataset_processed', 0.03, True)
-cloud, _, _, target, model, _ = p.__getitem__(0)
-
-
-print(torch.min(cloud, dim=0), torch.max(cloud, dim=0))
+cloud, _, _, target, model, _ = p.__getitem__(44)
 
 o3dcloud = o3d.geometry.PointCloud()
 o3dcloud.points = o3d.utility.Vector3dVector(cloud)

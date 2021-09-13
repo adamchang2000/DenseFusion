@@ -8,20 +8,23 @@ import open3d as o3d
 import numpy.ma as ma
 import cv2
 import random
-from .project_unity_depth import UnityDepthProjector
+try:
+    from .project_unity_depth import UnityDepthProjector
+except:
+    from project_unity_depth import UnityDepthProjector
 import torch
 from scipy.spatial.transform import Rotation as R
 
 class PoseDataset(data.Dataset):
     def __init__(self, mode, num, add_noise, root, noise_trans, refine):
-        self.objlist = [1] #only medical cad model
+        self.objlist = [1]
         self.mode = mode
 
         self.list_rgb = []
         self.list_depth = []
         self.list_label = []
         self.list_obj = []
-        self.list_rank = []
+        self.list_meta = []
         self.meta = {}
         self.pt = {}
         self.root = root
@@ -46,7 +49,7 @@ class PoseDataset(data.Dataset):
                 self.list_rgb.append('{0}/data/{1}/rgb/FrameBuffer_{2}.png'.format(self.root, '%02d' % item, '%04d' % int(input_line)))
                 self.list_depth.append('{0}/data/{1}/depth/Depth_{2}.png'.format(self.root, '%02d' % item, '%04d' % int(input_line)))
                 self.list_label.append('{0}/data/{1}/mask/{2}.png'.format(self.root, '%02d' % item, '%04d' % int(input_line)))
-                
+                self.list_meta.append(int(input_line))
                 self.list_obj.append(item)
 
             #parse gt transforms
@@ -78,11 +81,20 @@ class PoseDataset(data.Dataset):
 
         self.num = num
         self.add_noise = add_noise
+        #turning off training data noise
+        #self.add_noise = False
+
+        print('using noise?', self.add_noise)
+        print('noise trans', self.noise_trans)
+
         self.trancolor = transforms.ColorJitter(0.2, 0.2, 0.2, 0.05)
         self.norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         self.border_list = [-1, 40, 80, 120, 160, 200, 240, 280, 320, 360, 400, 440, 480, 520, 560, 600, 640, 680]
-        self.num_pt_mesh_large = 1500
-        self.num_pt_mesh_small = 1500
+        self.num_pt_mesh_large = 500
+        self.num_pt_mesh_small = 500
+
+        #setting infinite dist. pixels to gray
+        self.gray = np.array([130, 130, 130])
 
         self.udp = UnityDepthProjector('{0}/data/{1}/meta/proj_mat.txt'.format(self.root, '%02d' % item), (520, 1109))
 
@@ -101,7 +113,8 @@ class PoseDataset(data.Dataset):
         label = np.array(Image.open(self.list_label[index]))
         obj = self.list_obj[index]
 
-        gt_trans = self.meta[obj][index]
+        #transform indices are 1 off from image indices
+        gt_trans = self.meta[obj][self.list_meta[index]+1]
 
         #remove infinities
         mask_depth = ma.getmaskarray(ma.masked_not_equal(depth, np.max(depth)))
@@ -114,12 +127,15 @@ class PoseDataset(data.Dataset):
             img = self.trancolor(img)
 
         img = np.array(img)[:, :, :3]
+
+        #remove horizon from unity by setting infinite distance poitns to gray
+        img[depth == np.max(depth)] = self.gray
+
         img = np.transpose(img, (2, 0, 1))
         img_masked = img
 
         rmin, rmax, cmin, cmax = get_bbox(mask_label)
         img_masked = img_masked[:, rmin:rmax, cmin:cmax]
-
 
         target_r_quat = convert_quat(gt_trans[1])
         target_r = quaternion_rotation_matrix(target_r_quat)
@@ -155,15 +171,20 @@ class PoseDataset(data.Dataset):
         model_points = np.delete(model_points, dellist, axis=0)
 
         #want to swap the axes of the target
-        swap_x = np.zeros((3, 3))
-        swap_x[0,0] = 1
-        swap_x[1,2] = 1
-        swap_x[2,1] = 1
+        x_90 = np.zeros((3, 3))
+        x_90[0,0] = 1
+        x_90[1,2] = 1
+        x_90[2,1] = 1
 
-        swap_y = np.zeros((3, 3))
-        swap_y[0,2] = 1
-        swap_y[1,1] = 1
-        swap_y[2,0] = -1
+        x_180 = np.zeros((3, 3))
+        x_180[0,0] = 1
+        x_180[1,1] = -1
+        x_180[2,2] = -1
+
+        y_180 = np.zeros((3, 3))
+        y_180[0,0] = -1
+        y_180[1,1] = 1
+        y_180[2,2] = -1
 
         target = np.copy(model_points)
         # target_mean = np.mean(target, axis=0)
@@ -173,7 +194,7 @@ class PoseDataset(data.Dataset):
         # target += target_mean
 
 
-        target = np.dot(target, (target_r @ swap_x).T)
+        target = np.dot(target, (target_r @ y_180).T)
 
         if self.add_noise:
             target = np.add(target, target_t + add_t * 10000)
@@ -231,8 +252,10 @@ def ply_vtx(path, number_of_points=3000):
     try:
         model = o3d.io.read_triangle_mesh(path)
         if len(model.triangles) > 0:
-            pts = np.array(model.sample_points_uniformly(number_of_points=number_of_points))
+            print('loaded a triangle mesh')
+            pts = np.array(model.sample_points_uniformly(number_of_points=number_of_points).points)
         else:
+            print('loaded a point cloud')
             model = o3d.io.read_point_cloud(path)
             pts = np.array(model.points)
             pts = pts[np.random.choice(pts.shape[0], number_of_points)]

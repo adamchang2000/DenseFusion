@@ -14,6 +14,9 @@ class UnityMaskGenerator:
             mask_dir = os.path.join(self.root, "data", obj_dir, "mask")
 
             for image_file in os.listdir(depth_dir):
+
+                print('generating mask for', image_file)
+
                 img = cv2.imread(os.path.join(depth_dir, image_file), cv2.IMREAD_UNCHANGED)
                 a = np.where(img != np.max(img))
                 if (np.sum(a) > 0):
