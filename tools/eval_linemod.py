@@ -20,7 +20,7 @@ from lib.network import PoseNet, PoseRefineNet
 from lib.loss import Loss
 from lib.loss_refiner import Loss_refine
 from lib.transformations import euler_matrix, quaternion_matrix, quaternion_from_matrix
-from lib.knn.__init__ import KNearestNeighbor
+from knn_cuda import KNN
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir')
@@ -35,7 +35,8 @@ iteration = 4
 bs = 1
 dataset_config_dir = 'datasets/linemod/dataset_config'
 output_result_dir = 'experiments/eval_result/linemod'
-knn = KNearestNeighbor(1)
+knn = KNN(k=1, transpose_mode=True)
+
 
 estimator = PoseNet(num_points = num_points, num_obj = num_objects)
 estimator.cuda()
@@ -66,6 +67,7 @@ num_count = [0 for i in range(num_objects)]
 fw = open('{0}/eval_result_logs.txt'.format(output_result_dir), 'w')
 
 for i, data in enumerate(testdataloader, 0):
+
     points, choose, img, target, model_points, idx = data
     if len(points.size()) == 2:
         print('No.{0} NOT Pass! Lost detection!'.format(i))
@@ -121,15 +123,19 @@ for i, data in enumerate(testdataloader, 0):
     target = target[0].cpu().detach().numpy()
 
     if idx[0].item() in sym_list:
-        pred = torch.from_numpy(pred.astype(np.float32)).cuda().transpose(1, 0).contiguous()
-        target = torch.from_numpy(target.astype(np.float32)).cuda().transpose(1, 0).contiguous()
-        inds = knn(target.unsqueeze(0), pred.unsqueeze(0))
-        target = torch.index_select(target, 1, inds.view(-1) - 1)
-        dis = torch.mean(torch.norm((pred.transpose(1, 0) - target.transpose(1, 0)), dim=1), dim=0).item()
+        pred = torch.from_numpy(pred.astype(np.float32)).unsqueeze(0).cuda()
+        target = torch.from_numpy(target.astype(np.float32)).unsqueeze(0).cuda()
+
+        dists, inds = knn(target, pred)
+        target = torch.index_select(target, 1, inds.view(-1))
+    
+        diffs = torch.norm((pred - target), dim = 2).cpu().numpy()
+        dis = np.mean(diffs)
+
     else:
         dis = np.mean(np.linalg.norm(pred - target, axis=1))
 
-    if dis < diameter[idx[0].item()]:
+    if dis < 0.005:
         success_count[idx[0].item()] += 1
         print('No.{0} Pass! Distance: {1}'.format(i, dis))
         fw.write('No.{0} Pass! Distance: {1}\n'.format(i, dis))
