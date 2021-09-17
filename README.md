@@ -4,6 +4,9 @@
 	<img src ="assets/pullfig.png" width="1000" />
 </p>
 
+## Adam NOTES
+This branch works with pytorch 1.7.1. We run it with CUDA 10.1.
+
 ## News
 We have released the code and arXiv preprint for our new project [6-PACK](https://sites.google.com/view/6packtracking) which is based on this work and used for category-level 6D pose tracking.
 
