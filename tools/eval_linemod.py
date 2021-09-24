@@ -125,7 +125,7 @@ for i, data in enumerate(testdataloader, 0):
     if idx[0].item() in sym_list:
         pred = torch.from_numpy(pred.astype(np.float32)).unsqueeze(0).cuda()
         target = torch.from_numpy(target.astype(np.float32)).unsqueeze(0).cuda()
-
+        
         dists, inds = knn(target, pred)
         target = torch.index_select(target, 1, inds.view(-1))
     

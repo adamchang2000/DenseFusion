@@ -39,12 +39,14 @@ def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_poin
     pred = torch.add(torch.bmm(model_points, base), pred_t)
 
     if idx[0].item() in sym_list:
-        target = target[0].transpose(1, 0).contiguous().view(3, -1)
-        pred = pred.permute(2, 0, 1).contiguous().view(3, -1)
-        dists, inds = knn(target.unsqueeze(0), pred.unsqueeze(0))
-        target = torch.index_select(target, 1, inds.view(-1) - 1)
-        target = target.view(3, bs * num_p, num_point_mesh).permute(1, 2, 0).contiguous()
-        pred = pred.view(3, bs * num_p, num_point_mesh).permute(1, 2, 0).contiguous()
+
+        target = target[0].contiguous().view(-1, 3).unsqueeze(0)
+        pred = pred.contiguous().view(-1, 3).unsqueeze(0)
+
+        dists, inds = knn(target, pred)
+        target = torch.index_select(target, 1, inds.view(-1))
+        target = target.view(bs * num_p, num_point_mesh, 3).contiguous()
+        pred = pred.view(bs * num_p, num_point_mesh, 3).contiguous()
 
     dis = torch.mean(torch.norm((pred - target), dim=2), dim=1)
 
