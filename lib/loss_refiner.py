@@ -47,14 +47,31 @@ def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_poin
     if idx[0].item() in sym_list:
 
         target = target[0].contiguous().view(-1, 3).unsqueeze(0)
-        pred = pred.contiguous().view(-1, 3).unsqueeze(0)
+        pred_reshaped = pred.view(-1, 3).unsqueeze(0)
 
-        dists, inds = knn(target, pred)
-        target = torch.index_select(target, 1, inds.view(-1))
-        target = target.view(bs * num_p, num_point_mesh, 3).contiguous()
+        #distance from pred to nearest point on gt
+        _dists, inds_a = knn(target, pred_reshaped)
+        target_a = torch.index_select(target, 1, inds_a.view(-1))
+
+        target_a = target_a.view(bs * num_p, num_point_mesh, 3).contiguous()
+        pred_a = pred_reshaped.view(bs * num_p, num_point_mesh, 3).contiguous()
+
+        dis_a = torch.mean(torch.norm((pred_a - target_a), dim=2), dim=1)
+
+        #distance from gt to nearest point on pred
+        _dists, inds_b = knn(pred, ori_target)
+
+        pred = torch.gather(pred, 1, inds_b.repeat(1, 1, 3))
+
         pred = pred.view(bs * num_p, num_point_mesh, 3).contiguous()
+        target = ori_target.view(bs * num_p, num_point_mesh, 3).contiguous()
 
-    dis = torch.mean(torch.norm((pred - target), dim=2), dim=1)
+        dis_b = torch.mean(torch.norm((pred - target), dim=2), dim=1)
+
+        dis = (dis_a + dis_b) / 2
+
+    else:
+        dis = torch.mean(torch.norm((pred - target), dim=2), dim=1)
 
     t = ori_t[0]
     points = points.view(1, num_input_points, 3)
