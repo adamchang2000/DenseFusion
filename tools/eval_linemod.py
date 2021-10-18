@@ -171,7 +171,7 @@ for i, data in enumerate(testdataloader, 0):
     else:
         dis = np.mean(np.linalg.norm(pred - target, axis=1))
 
-    if dis < 0.02:
+    if dis < diameter[idx[0].item()]:
         success_count[idx[0].item()] += 1
         print('No.{0} Pass! Distance: {1}'.format(i, dis))
         fw.write('No.{0} Pass! Distance: {1}\n'.format(i, dis))

@@ -14,6 +14,14 @@ import copy
 import scipy.misc
 import scipy.io as scio
 
+def rotation_around_x_axis(radians):
+    return np.array([[1, 0, 0], [0, np.cos(radians), -np.sin(radians)], [0, np.sin(radians), np.cos(radians)]])
+
+def rotation_around_y_axis(radians):
+    return np.array([[np.cos(radians), 0, np.sin(radians)], [0, 1, 0], [-np.sin(radians), 0, np.cos(radians)]])
+
+def rotation_around_z_axis(radians):
+    return np.array([[np.cos(radians), -np.sin(radians), 0], [np.sin(radians), np.cos(radians), 0], [0, 0, 1]]) 
 
 class PoseDataset(data.Dataset):
     def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine):
@@ -23,6 +31,9 @@ class PoseDataset(data.Dataset):
             self.path = 'datasets/ycb/dataset_config/test_data_list.txt'
         self.num_pt = num_pt
         self.root = root
+
+        print("root", self.root)
+
         self.add_noise = add_noise
         self.noise_trans = noise_trans
 
@@ -50,6 +61,7 @@ class PoseDataset(data.Dataset):
         class_file = open('datasets/ycb/dataset_config/classes.txt')
         class_id = 1
         self.cld = {}
+        self.frontd = {}
         while 1:
             class_input = class_file.readline()
             if not class_input:
@@ -61,11 +73,25 @@ class PoseDataset(data.Dataset):
                 input_line = input_file.readline()
                 if not input_line:
                     break
-                input_line = input_line[:-1].split(' ')
+                input_line = input_line.rstrip().split(' ')
                 self.cld[class_id].append([float(input_line[0]), float(input_line[1]), float(input_line[2])])
             self.cld[class_id] = np.array(self.cld[class_id])
             input_file.close()
-            
+
+            print(class_input[:-1])
+            input_file = open('{0}/models/{1}/front.xyz'.format(self.root, class_input[:-1]))
+            self.frontd[class_id] = []
+            while 1:
+                input_line = input_file.readline()
+                print('line', input_line, len(input_line))
+                if not input_line or len(input_line) <= 1:
+                    break
+                input_line = input_line.rstrip().split(' ')
+                print(input_line)
+                self.frontd[class_id].append([float(input_line[0]), float(input_line[1]), float(input_line[2])])
+            self.frontd[class_id] = np.array(self.frontd[class_id])
+            input_file.close()
+
             class_id += 1
 
         self.cam_cx_1 = 312.9869
@@ -91,6 +117,8 @@ class PoseDataset(data.Dataset):
         self.num_pt_mesh_large = 2600
         self.refine = refine
         self.front_num = 2
+
+        print(self.frontd)
 
         print(len(self.list))
 
@@ -146,6 +174,8 @@ class PoseDataset(data.Dataset):
             if len(mask.nonzero()[0]) > self.minimum_num_pt:
                 break
 
+        print('idx', idx, obj[idx])
+
         if self.add_noise:
             img = self.trancolor(img)
 
@@ -166,13 +196,40 @@ class PoseDataset(data.Dataset):
         if self.list[index][:8] == 'data_syn':
             img_masked = img_masked + np.random.normal(loc=0.0, scale=7.0, size=img_masked.shape)
 
-        # p_img = np.transpose(img_masked, (1, 2, 0))
-        # scipy.misc.imsave('temp/{0}_input.png'.format(index), p_img)
-        # scipy.misc.imsave('temp/{0}_label.png'.format(index), mask[rmin:rmax, cmin:cmax].astype(np.int32))
-
         target_r = meta['poses'][:, :, idx][:, 0:3]
         target_t = np.array([meta['poses'][:, :, idx][:, 3:4].flatten()])
         add_t = np.array([random.uniform(-self.noise_trans, self.noise_trans) for i in range(3)])
+
+        #calculating our histogram rotation representation
+        front = self.frontd[obj[idx]][0]
+        x_vec = np.array([1., 0., 0.])
+        y_vec = np.array([0., 1., 0.])
+
+        #front needs to be axis aligned
+        if np.array_equal(front, np.array([1, 0, 0])):
+            Fr = np.eye(3)
+        elif np.array_equal(front, np.array([-1, 0, 0])):
+            Fr = rotation_around_z_axis(np.pi)
+        elif np.array_equal(front, np.array([0, 1, 0])):
+            print("y pos")
+            Fr = rotation_around_z_axis(-np.pi / 2)
+        elif np.array_equal(front, np.array([0, -1, 0])):
+            print("y neg")
+            Fr = rotation_around_z_axis(np.pi / 2)
+        elif np.array_equal(front, np.array([0, 0, 1])):
+            print("z pos")
+            Fr = rotation_around_y_axis(np.pi / 2)
+        elif np.array_equal(front, np.array([0, 0, -1])):
+            print("z neg")
+            Fr = rotation_around_y_axis(-np.pi / 2)
+        else:
+            raise("front needs to be axis aligned")
+
+        print(Fr @ front, x_vec)
+        
+        print("did front stuff!")
+
+
 
         choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
         if len(choose) > self.num_pt:
