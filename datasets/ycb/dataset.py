@@ -61,7 +61,15 @@ class PoseDataset(data.Dataset):
         class_file = open('datasets/ycb/dataset_config/classes.txt')
         class_id = 1
         self.cld = {}
+        
+        #front vector for objects
         self.frontd = {}
+
+        #symmetries for objects
+        self.symmd = {}
+
+        supported_symm_types = {'radial'}
+
         while 1:
             class_input = class_file.readline()
             if not class_input:
@@ -78,18 +86,28 @@ class PoseDataset(data.Dataset):
             self.cld[class_id] = np.array(self.cld[class_id])
             input_file.close()
 
-            print(class_input[:-1])
             input_file = open('{0}/models/{1}/front.xyz'.format(self.root, class_input[:-1]))
             self.frontd[class_id] = []
             while 1:
                 input_line = input_file.readline()
-                print('line', input_line, len(input_line))
                 if not input_line or len(input_line) <= 1:
                     break
                 input_line = input_line.rstrip().split(' ')
-                print(input_line)
                 self.frontd[class_id].append([float(input_line[0]), float(input_line[1]), float(input_line[2])])
             self.frontd[class_id] = np.array(self.frontd[class_id])
+            input_file.close()
+
+            input_file = open('{0}/models/{1}/symm.txt'.format(self.root, class_input[:-1]))
+            self.symmd[class_id] = []
+            while 1:
+                input_line = input_file.readline()
+                if not input_line or len(input_line) <= 1:
+                    break
+                symm_type = input_line.readline().rstrip()
+                if symm_type not in supported_symm_types:
+                    raise("Invalid symm_type " + symm_type)
+                number_of_symms = int(input_line.readline().rstrip())
+                self.symmd[class_id].append((symm_type, number_of_symms))
             input_file.close()
 
             class_id += 1
@@ -202,32 +220,8 @@ class PoseDataset(data.Dataset):
 
         #calculating our histogram rotation representation
         front = self.frontd[obj[idx]][0]
-        x_vec = np.array([1., 0., 0.])
-        y_vec = np.array([0., 1., 0.])
 
-        #front needs to be axis aligned
-        if np.array_equal(front, np.array([1, 0, 0])):
-            Fr = np.eye(3)
-        elif np.array_equal(front, np.array([-1, 0, 0])):
-            Fr = rotation_around_z_axis(np.pi)
-        elif np.array_equal(front, np.array([0, 1, 0])):
-            print("y pos")
-            Fr = rotation_around_z_axis(-np.pi / 2)
-        elif np.array_equal(front, np.array([0, -1, 0])):
-            print("y neg")
-            Fr = rotation_around_z_axis(np.pi / 2)
-        elif np.array_equal(front, np.array([0, 0, 1])):
-            print("z pos")
-            Fr = rotation_around_y_axis(np.pi / 2)
-        elif np.array_equal(front, np.array([0, 0, -1])):
-            print("z neg")
-            Fr = rotation_around_y_axis(-np.pi / 2)
-        else:
-            raise("front needs to be axis aligned")
 
-        print(Fr @ front, x_vec)
-        
-        print("did front stuff!")
 
 
 
