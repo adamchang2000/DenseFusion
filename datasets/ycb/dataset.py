@@ -15,7 +15,7 @@ import scipy.misc
 import scipy.io as scio
 
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, num_rot_bins):
+    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, num_rot_bins=36):
         if mode == 'train':
             self.path = 'datasets/ycb/dataset_config/train_data_list.txt'
         elif mode == 'test':
@@ -61,6 +61,8 @@ class PoseDataset(data.Dataset):
 
         supported_symm_types = {'radial'}
 
+        self.symmetry_obj_idx = [12, 15, 18, 19, 20]
+
         while 1:
             class_input = class_file.readline()
             if not class_input:
@@ -88,18 +90,21 @@ class PoseDataset(data.Dataset):
             self.frontd[class_id] = np.array(self.frontd[class_id])
             input_file.close()
 
-            input_file = open('{0}/models/{1}/symm.txt'.format(self.root, class_input[:-1]))
-            self.symmd[class_id] = []
-            while 1:
-                input_line = input_file.readline()
-                if not input_line or len(input_line) <= 1:
-                    break
-                symm_type = input_line.readline().rstrip()
-                if symm_type not in supported_symm_types:
-                    raise("Invalid symm_type " + symm_type)
-                number_of_symms = int(input_line.readline().rstrip())
-                self.symmd[class_id].append((symm_type, number_of_symms))
-            input_file.close()
+            #since class_is 1-indexed but self.symmetry_obj_idx is 0-indexed...
+            if class_id - 1 in self.symmetry_obj_idx:
+                input_file = open('{0}/models/{1}/symm.txt'.format(self.root, class_input[:-1]))
+                self.symmd[class_id] = []
+                while 1:
+                    symm_type = input_file.readline().rstrip()
+                    if not symm_type or len(symm_type) == 0:
+                        break
+                    if symm_type not in supported_symm_types:
+                        raise Exception("Invalid symm_type " + symm_type)
+                    number_of_symms = input_file.readline().rstrip()
+                    self.symmd[class_id].append((symm_type, number_of_symms))
+                input_file.close()
+            else:
+                self.symmd[class_id] = []
 
             class_id += 1
 
@@ -121,12 +126,12 @@ class PoseDataset(data.Dataset):
         self.noise_img_scale = 7.0
         self.minimum_num_pt = 50
         self.norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        self.symmetry_obj_idx = [12, 15, 18, 19, 20]
         self.num_pt_mesh_small = 500
         self.num_pt_mesh_large = 2600
         self.refine = refine
         self.front_num = 2
         self.num_rot_bins = num_rot_bins
+        self.rot_bin_width = 2. * np.pi / num_rot_bins
 
     def __getitem__(self, index):
         img = Image.open('{0}/{1}-color.png'.format(self.root, self.list[index]))
@@ -206,29 +211,53 @@ class PoseDataset(data.Dataset):
         target_t = np.array([meta['poses'][:, :, idx][:, 3:4].flatten()])
         add_t = np.array([random.uniform(-self.noise_trans, self.noise_trans) for i in range(3)])
 
-        rot_bins = np.zeros(self.num_rot_bins)
+        rot_bins = np.zeros(self.num_rot_bins).astype(np.float32)
 
         #calculating our histogram rotation representation
+        
+        #right now, we are only dealing with one "front" axis
         front = self.frontd[obj[idx]][0]
-        symm = self.symmd[obj[idx]][0]
+
+        #symmetries
+        symm = self.symmd[obj[idx]]
 
         print('symm', symm)
 
+        #calculate front axis in GT pose
         front_r = target_r @ front
-
+        
+        #find rotation matrix that goes from front -> front_r
         Rf = rotation_matrix_from_vectors(front, front_r)
 
+        #find residual rotation
         R_around_front = target_r @ Rf.T
 
-        print(front_r)
-
+        #axis will be the same as R_around_front
         axis, angle = axis_angle_of_rotation_matrix(R_around_front)
 
-        exit(0)
+        assert (angle >= 0 and angle <= np.pi * 2)
 
+        angle_bin = int(angle / self.rot_bin_width)
 
+        #calculate other peaks based on size of symm
+        if len(symm) > 0:
+            symm_type, num_symm = symm[0]
+            if num_symm == 'inf':
+                rot_bins[:] = 1.
+            else:
+                num_symm = int(num_symm)
 
+                symm_bins = (np.arange(0, 2 * np.pi, 2 * np.pi / num_symm) / self.rot_bin_width).astype(np.int)
+                symm_bins += angle_bin
+                symm_bins = np.mod(symm_bins, self.num_rot_bins)
+                rot_bins[symm_bins] = 1.
 
+                print(symm_bins)
+        
+        else:
+            rot_bins[angle_bin] = 1. 
+
+        rot_bins /= np.linalg.norm(rot_bins, ord=1)
 
         choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
         if len(choose) > self.num_pt:
@@ -262,29 +291,12 @@ class PoseDataset(data.Dataset):
             dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_large)
         else:
             dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_small)
-        model_points = np.delete(self.cld[obj[idx]], dellist, axis=0)
-
-        # fw = open('temp/{0}_model_points.xyz'.format(index), 'w')
-        # for it in model_points:
-        #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-        # fw.close()
-
-        target = np.dot(model_points, target_r.T)
-        if self.add_noise:
-            target = np.add(target, target_t + add_t)
-        else:
-            target = np.add(target, target_t)
-        
-        # fw = open('temp/{0}_tar.xyz'.format(index), 'w')
-        # for it in target:
-        #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-        # fw.close()
         
         return torch.from_numpy(cloud.astype(np.float32)), \
                torch.LongTensor(choose.astype(np.int32)), \
                self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
-               torch.from_numpy(target.astype(np.float32)), \
-               torch.from_numpy(model_points.astype(np.float32)), \
+               torch.from_numpy(front_r.astype(np.float32)), \
+               torch.from_numpy(rot_bins.astype(np.float32)), \
                torch.LongTensor([int(obj[idx]) - 1])
 
     def __len__(self):

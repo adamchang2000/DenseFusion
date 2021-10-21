@@ -173,12 +173,12 @@ def main():
         refiner.eval()
 
         for j, data in enumerate(testdataloader, 0):
-            points, choose, img, target, model_points, idx = data
-            points, choose, img, target, model_points, idx = Variable(points).cuda(), \
+            points, choose, img, front_r, rot_bins, idx = data
+            points, choose, img, front_r, rot_bins, idx = Variable(points).cuda(), \
                                                              Variable(choose).cuda(), \
                                                              Variable(img).cuda(), \
-                                                             Variable(target).cuda(), \
-                                                             Variable(model_points).cuda(), \
+                                                             Variable(front_r).cuda(), \
+                                                             Variable(rot_bins).cuda(), \
                                                              Variable(idx).cuda()
             pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
             _, dis, new_points, new_target = criterion(pred_r, pred_t, pred_c, target, model_points, idx, points, opt.w, opt.refine_start)
