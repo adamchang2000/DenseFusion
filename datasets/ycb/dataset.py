@@ -8,23 +8,14 @@ import torchvision.transforms as transforms
 import argparse
 import time
 import random
-from lib.transformations import quaternion_from_euler, euler_matrix, random_quaternion, quaternion_matrix
+from lib.transformations import quaternion_from_euler, euler_matrix, random_quaternion, quaternion_matrix, rotation_matrix_from_vectors, axis_angle_of_rotation_matrix
 import numpy.ma as ma
 import copy
 import scipy.misc
 import scipy.io as scio
 
-def rotation_around_x_axis(radians):
-    return np.array([[1, 0, 0], [0, np.cos(radians), -np.sin(radians)], [0, np.sin(radians), np.cos(radians)]])
-
-def rotation_around_y_axis(radians):
-    return np.array([[np.cos(radians), 0, np.sin(radians)], [0, 1, 0], [-np.sin(radians), 0, np.cos(radians)]])
-
-def rotation_around_z_axis(radians):
-    return np.array([[np.cos(radians), -np.sin(radians), 0], [np.sin(radians), np.cos(radians), 0], [0, 0, 1]]) 
-
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine):
+    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, num_rot_bins):
         if mode == 'train':
             self.path = 'datasets/ycb/dataset_config/train_data_list.txt'
         elif mode == 'test':
@@ -117,10 +108,7 @@ class PoseDataset(data.Dataset):
         self.num_pt_mesh_large = 2600
         self.refine = refine
         self.front_num = 2
-
-        print(self.frontd)
-
-        print(len(self.list))
+        self.num_rot_bins = num_rot_bins
 
     def __getitem__(self, index):
         img = Image.open('{0}/{1}-color.png'.format(self.root, self.list[index]))
@@ -200,34 +188,24 @@ class PoseDataset(data.Dataset):
         target_t = np.array([meta['poses'][:, :, idx][:, 3:4].flatten()])
         add_t = np.array([random.uniform(-self.noise_trans, self.noise_trans) for i in range(3)])
 
+        rot_bins = np.zeros(self.num_rot_bins)
+
         #calculating our histogram rotation representation
         front = self.frontd[obj[idx]][0]
-        x_vec = np.array([1., 0., 0.])
-        y_vec = np.array([0., 1., 0.])
+        symm = self.symmd[obj[idx]][0]
 
-        #front needs to be axis aligned
-        if np.array_equal(front, np.array([1, 0, 0])):
-            Fr = np.eye(3)
-        elif np.array_equal(front, np.array([-1, 0, 0])):
-            Fr = rotation_around_z_axis(np.pi)
-        elif np.array_equal(front, np.array([0, 1, 0])):
-            print("y pos")
-            Fr = rotation_around_z_axis(-np.pi / 2)
-        elif np.array_equal(front, np.array([0, -1, 0])):
-            print("y neg")
-            Fr = rotation_around_z_axis(np.pi / 2)
-        elif np.array_equal(front, np.array([0, 0, 1])):
-            print("z pos")
-            Fr = rotation_around_y_axis(np.pi / 2)
-        elif np.array_equal(front, np.array([0, 0, -1])):
-            print("z neg")
-            Fr = rotation_around_y_axis(-np.pi / 2)
-        else:
-            raise("front needs to be axis aligned")
+        front_r = target_r @ front
 
-        print(Fr @ front, x_vec)
-        
-        print("did front stuff!")
+        Rf = rotation_matrix_from_vectors(front, front_r)
+
+        R_around_front = target_r @ Rf.T
+
+        print(front_r)
+
+        axis, angle = axis_angle_of_rotation_matrix(R_around_front)
+
+        angle 
+
 
 
 

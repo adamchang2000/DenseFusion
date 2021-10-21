@@ -19,6 +19,7 @@ import scipy.misc
 import scipy.io as scio
 import yaml
 import cv2
+from lib.transformations import rotation_matrix_from_vectors
 
 
 class PoseDataset(data.Dataset):

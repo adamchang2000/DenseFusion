@@ -1890,6 +1890,73 @@ def is_same_quaternion(q0, q1):
     q1 = numpy.array(q1)
     return numpy.allclose(q0, q1) or numpy.allclose(q0, -q1)
 
+def rotation_matrix_from_vectors(vec1, vec2):
+    """ Find the rotation matrix that aligns vec1 to vec2
+    :param vec1: A 3d "source" vector
+    :param vec2: A 3d "destination" vector
+    :return mat: A transform matrix (3x3) which when applied to vec1, aligns it with vec2.
+    """
+    a, b = (vec1 / numpy.linalg.norm(vec1)).reshape(3), (vec2 / numpy.linalg.norm(vec2)).reshape(3)
+    v = numpy.cross(a, b)
+    c = numpy.dot(a, b)
+    s = numpy.linalg.norm(v)
+    kmat = numpy.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    rotation_matrix = numpy.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
+    return rotation_matrix
+
+def axis_angle_of_rotation_matrix(rot_mat):
+    assert(rot_mat.shape == (3, 3))
+
+    angle = numpy.arccos(( rot_mat[0,0] + rot_mat[1,1] + rot_mat[2,2] - 1)/2)
+    x = (rot_mat[2,1] - rot_mat[1,2])/numpy.sqrt(numpy.square(rot_mat[2,1] - rot_mat[1,2])+numpy.square(rot_mat[0,2] - rot_mat[2,0])+numpy.square(rot_mat[1,0] - rot_mat[0,1]))
+    y = (rot_mat[0,2] - rot_mat[2,0])/numpy.sqrt(numpy.square(rot_mat[2,1] - rot_mat[1,2])+numpy.square(rot_mat[0,2] - rot_mat[2,0])+numpy.square(rot_mat[1,0] - rot_mat[0,1]))
+    z = (rot_mat[1,0] - rot_mat[0,1])/numpy.sqrt(numpy.square(rot_mat[2,1] - rot_mat[1,2])+numpy.square(rot_mat[0,2] - rot_mat[2,0])+numpy.square(rot_mat[1,0] - rot_mat[0,1]))
+
+    return numpy.array([x,y,z]), angle
+
+# def get_ortho(v):
+#     dom_axis = numpy.argmax(v)
+#     if dom_axis == 0:
+#         return numpy.array([-v[1] - v[2], v[0], v[0]])
+#     elif dom_axis == 1:
+#         return numpy.array([v[1], -v[0] - v[2], v[1]])
+#     else:
+#         return numpy.array([v[2], v[2], -v[0] - v[1]])
+
+
+# def rot_mat_between_two_vectors(v1, v2):
+#     axis = numpy.cross(v1, v2) #(u, v, w)
+#     cos = v1 @ v2
+#     one_minus_cos = 1 - cos
+#     sin = numpy.linalg.norm(axis)
+
+#     #check for edge cases where vectors are collinear
+#     if sin < 1e-6:
+#         print("collinear!")
+#         if cos > 0:
+#             return numpy.eye(3)
+#         else:
+#             axis = get_ortho(v1)
+#             axis /= numpy.linalg.norm(axis)
+#             sin = 0.
+#             cos = -1.
+#             one_minus_cos = 2.
+
+#     print(cos, one_minus_cos, sin)
+
+#     rot_mat = numpy.zeros((3, 3))
+#     rot_mat[0,0] = cos + axis[0] * axis[0] * one_minus_cos
+#     rot_mat[1,0] = axis[2] * sin + axis[1] * axis[0] * one_minus_cos
+#     rot_mat[2,0] = -axis[1] * sin + axis[2] * axis[0] * one_minus_cos
+#     rot_mat[0,1] = -axis[2] * sin + axis[0] * axis[1] * one_minus_cos
+#     rot_mat[1,1] = cos + axis[1] * axis[1] * one_minus_cos
+#     rot_mat[2,1] = axis[0] * sin + axis[2] * axis[1] * one_minus_cos
+#     rot_mat[0,2] = axis[1] * sin + axis[0] * axis[2] * one_minus_cos
+#     rot_mat[1,2] = -axis[0] * sin + axis[1] * axis[2] * one_minus_cos
+#     rot_mat[2,2] = cos + axis[2] * axis[2] * one_minus_cos
+
+#     return rot_mat
+
 
 def _import_module(name, package=None, warn=True, prefix='_py_', ignore='_'):
     """Try import all public attributes from module into global namespace.
