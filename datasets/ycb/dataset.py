@@ -15,7 +15,7 @@ import scipy.misc
 import scipy.io as scio
 
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, num_rot_bins=36):
+    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, num_rot_bins):
         if mode == 'train':
             self.path = 'datasets/ycb/dataset_config/train_data_list.txt'
         elif mode == 'test':
@@ -185,8 +185,6 @@ class PoseDataset(data.Dataset):
             if len(mask.nonzero()[0]) > self.minimum_num_pt:
                 break
 
-        print('idx', idx, obj[idx])
-
         if self.add_noise:
             img = self.trancolor(img)
 
@@ -221,8 +219,6 @@ class PoseDataset(data.Dataset):
         #symmetries
         symm = self.symmd[obj[idx]]
 
-        print('symm', symm)
-
         #calculate front axis in GT pose
         front_r = target_r @ front
         
@@ -236,7 +232,7 @@ class PoseDataset(data.Dataset):
         axis, angle = axis_angle_of_rotation_matrix(R_around_front)
 
         assert (angle >= 0 and angle <= np.pi * 2)
-
+        
         angle_bin = int(angle / self.rot_bin_width)
 
         #calculate other peaks based on size of symm
@@ -251,8 +247,6 @@ class PoseDataset(data.Dataset):
                 symm_bins += angle_bin
                 symm_bins = np.mod(symm_bins, self.num_rot_bins)
                 rot_bins[symm_bins] = 1.
-
-                print(symm_bins)
         
         else:
             rot_bins[angle_bin] = 1. 
@@ -291,12 +285,16 @@ class PoseDataset(data.Dataset):
             dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_large)
         else:
             dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_small)
+        model_points = np.delete(self.cld[obj[idx]], dellist, axis=0)
         
         return torch.from_numpy(cloud.astype(np.float32)), \
                torch.LongTensor(choose.astype(np.int32)), \
                self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
                torch.from_numpy(front_r.astype(np.float32)), \
                torch.from_numpy(rot_bins.astype(np.float32)), \
+               torch.from_numpy(front.astype(np.float32)), \
+               torch.from_numpy(target_t.astype(np.float32)), \
+               torch.from_numpy(model_points.astype(np.float32)), \
                torch.LongTensor([int(obj[idx]) - 1])
 
     def __len__(self):

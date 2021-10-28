@@ -1,16 +1,11 @@
 from torch.nn.modules.loss import _Loss
 from torch.autograd import Variable
 import torch
-try:
-    from .tools import compute_rotation_matrix_from_ortho6d
-except:
-    from tools import compute_rotation_matrix_from_ortho6d
 import time
 import numpy as np
 import torch.nn as nn
 import random
 import torch.backends.cudnn as cudnn
-from knn_cuda import KNN
 
 
 def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_point_mesh, sym_list):

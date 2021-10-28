@@ -44,6 +44,8 @@ parser.add_argument('--nepoch', type=int, default=500, help='max number of epoch
 parser.add_argument('--resume_posenet', type=str, default = '',  help='resume PoseNet model')
 parser.add_argument('--resume_refinenet', type=str, default = '',  help='resume PoseRefineNet model')
 parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
+
+parser.add_argument('--num_rot_bins', type=int, default = 36, help='number of bins discretizing the rotation around front')
 opt = parser.parse_args()
 
 
@@ -68,9 +70,9 @@ def main():
         print('Unknown dataset')
         return
 
-    estimator = PoseNet(num_points = opt.num_points, num_obj = opt.num_objects)
+    estimator = PoseNet(num_points = opt.num_points, num_obj = opt.num_objects, num_rot_bins = opt.num_rot_bins)
     estimator.cuda()
-    refiner = PoseRefineNet(num_points = opt.num_points, num_obj = opt.num_objects)
+    refiner = PoseRefineNet(num_points = opt.num_points, num_obj = opt.num_objects, num_rot_bins = opt.num_rot_bins)
     refiner.cuda()
 
     if opt.resume_posenet != '':
@@ -90,14 +92,14 @@ def main():
         optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
 
     if opt.dataset == 'ycb':
-        dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
+        dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins)
     elif opt.dataset == 'linemod':
-        dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
+        dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
     if opt.dataset == 'ycb':
-        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
+        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins)
     elif opt.dataset == 'linemod':
-        test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
+        test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins)
     testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
     
     opt.sym_list = dataset.get_sym_list()
@@ -105,8 +107,8 @@ def main():
 
     print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the training set: {0}\nlength of the testing set: {1}\nnumber of sample points on mesh: {2}\nsymmetry object list: {3}'.format(len(dataset), len(test_dataset), opt.num_points_mesh, opt.sym_list))
 
-    criterion = Loss(opt.num_points_mesh, opt.sym_list)
-    criterion_refine = Loss_refine(opt.num_points_mesh, opt.sym_list)
+    criterion = Loss(opt.num_points_mesh, opt.num_rot_bins)
+    criterion_refine = Loss_refine(opt.num_points_mesh, opt.num_rot_bins)
 
     best_test = np.Inf
 
@@ -129,20 +131,23 @@ def main():
 
         for rep in range(opt.repeat_epoch):
             for i, data in enumerate(dataloader, 0):
-                points, choose, img, target, model_points, idx = data
-                points, choose, img, target, model_points, idx = Variable(points).cuda(), \
+                points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = data
+                points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = Variable(points).cuda(), \
                                                                  Variable(choose).cuda(), \
                                                                  Variable(img).cuda(), \
-                                                                 Variable(target).cuda(), \
+                                                                 Variable(front_r).cuda(), \
+                                                                 Variable(rot_bins).cuda(), \
+                                                                 Variable(front_orig).cuda(), \
+                                                                 Variable(t).cuda(), \
                                                                  Variable(model_points).cuda(), \
                                                                  Variable(idx).cuda()
-                pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-                loss, dis, new_points, new_target = criterion(pred_r, pred_t, pred_c, target, model_points, idx, points, opt.w, opt.refine_start)
+                pred_front, pred_rot_bins, pred_t, pred_c, emb = estimator(img, points, choose, idx)
+                loss, dis, new_points = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, opt.w, opt.refine_start)
                 
                 if opt.refine_start:
                     for ite in range(0, opt.iteration):
-                        pred_r, pred_t = refiner(new_points, emb, idx)
-                        dis, new_points, new_target = criterion_refine(pred_r, pred_t, new_target, model_points, idx, new_points)
+                        pred_front, pred_rot_bins, pred_t = refiner(new_points, emb, idx)
+                        dis, new_points = criterion_refine(pred_front, pred_rot_bins, pred_t, idx, new_points)
                         dis.backward()
                 else:
                     loss.backward()
@@ -173,20 +178,20 @@ def main():
         refiner.eval()
 
         for j, data in enumerate(testdataloader, 0):
-            points, choose, img, front_r, rot_bins, idx = data
-            points, choose, img, front_r, rot_bins, idx = Variable(points).cuda(), \
-                                                             Variable(choose).cuda(), \
-                                                             Variable(img).cuda(), \
-                                                             Variable(front_r).cuda(), \
-                                                             Variable(rot_bins).cuda(), \
-                                                             Variable(idx).cuda()
-            pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-            _, dis, new_points, new_target = criterion(pred_r, pred_t, pred_c, target, model_points, idx, points, opt.w, opt.refine_start)
-
+            points, choose, img, front_r, rot_bins, t, idx = data
+            points, choose, img, front_r, rot_bins, t, idx = Variable(points).cuda(), \
+                                                                Variable(choose).cuda(), \
+                                                                Variable(img).cuda(), \
+                                                                Variable(front_r).cuda(), \
+                                                                Variable(rot_bins).cuda(), \
+                                                                Variable(idx).cuda()
+            pred_front, pred_rot_bins, pred_t, pred_c, emb = estimator(img, points, choose, idx)
+            _, dis, new_points = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, t, idx, points, opt.w, opt.refine_start)
+            
             if opt.refine_start:
                 for ite in range(0, opt.iteration):
-                    pred_r, pred_t = refiner(new_points, emb, idx)
-                    dis, new_points, new_target = criterion_refine(pred_r, pred_t, new_target, model_points, idx, new_points)
+                    pred_front, pred_rot_bins, pred_t = refiner(new_points, emb, idx)
+                    dis, new_points = criterion_refine(pred_front, pred_rot_bins, pred_t, idx, new_points)
 
             test_dis += dis.item()
             logger.info('Test time {0} Test Frame No.{1} dis:{2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), test_count, dis))
@@ -215,14 +220,14 @@ def main():
             optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
 
             if opt.dataset == 'ycb':
-                dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
+                dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins)
             elif opt.dataset == 'linemod':
-                dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
+                dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins)
             dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
             if opt.dataset == 'ycb':
-                test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
+                test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins)
             elif opt.dataset == 'linemod':
-                test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
+                test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins)
             testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
             
             opt.sym_list = dataset.get_sym_list()

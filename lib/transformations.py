@@ -1904,6 +1904,7 @@ def rotation_matrix_from_vectors(vec1, vec2):
     rotation_matrix = numpy.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
     return rotation_matrix
 
+
 def axis_angle_of_rotation_matrix(rot_mat):
     assert(rot_mat.shape == (3, 3))
 
@@ -1913,6 +1914,22 @@ def axis_angle_of_rotation_matrix(rot_mat):
     z = (rot_mat[1,0] - rot_mat[0,1])/numpy.sqrt(numpy.square(rot_mat[2,1] - rot_mat[1,2])+numpy.square(rot_mat[0,2] - rot_mat[2,0])+numpy.square(rot_mat[1,0] - rot_mat[0,1]))
 
     return numpy.array([x,y,z]), angle
+
+def rotation_matrix_of_axis_angle(axis, theta):
+    """
+    Return the rotation matrix associated with counterclockwise rotation about
+    the given axis by theta radians.
+    """
+    axis = numpy.asarray(axis)
+    axis = axis / math.sqrt(numpy.dot(axis, axis))
+    a = math.cos(theta / 2.0)
+    b, c, d = -axis * math.sin(theta / 2.0)
+    aa, bb, cc, dd = a * a, b * b, c * c, d * d
+    bc, ad, ac, ab, bd, cd = b * c, a * d, a * c, a * b, b * d, c * d
+    return numpy.array([[aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
+                     [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
+                     [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]])
+
 
 # def get_ortho(v):
 #     dom_axis = numpy.argmax(v)
