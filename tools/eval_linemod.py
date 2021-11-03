@@ -14,6 +14,7 @@ import torch.utils.data
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
+import open3d as o3d
 from torch.autograd import Variable
 from datasets.linemod.dataset import PoseDataset as PoseDataset_linemod
 from lib.network import PoseNet, PoseRefineNet
@@ -21,6 +22,7 @@ from lib.loss import Loss
 from lib.loss_refiner import Loss_refine
 from lib.transformations import euler_matrix, quaternion_matrix, quaternion_from_matrix
 from knn_cuda import KNN
+
 
 try:
     from lib.tools import compute_rotation_matrix_from_ortho6d
@@ -158,6 +160,10 @@ for i, data in enumerate(testdataloader, 0):
     pred = np.dot(model_points, my_r.T) + my_t
     target = target[0].cpu().detach().numpy()
 
+    #storing object 11 prediction as point cloud for debugging
+    
+    
+
     if idx[0].item() in sym_list:
         pred = torch.from_numpy(pred.astype(np.float32)).unsqueeze(0).cuda()
         target = torch.from_numpy(target.astype(np.float32)).unsqueeze(0).cuda()
@@ -171,7 +177,22 @@ for i, data in enumerate(testdataloader, 0):
     else:
         dis = np.mean(np.linalg.norm(pred - target, axis=1))
 
-    if dis < diameter[idx[0].item()]:
+    # if idx[0].item() == 11 and dis > 0.015:
+    #     pred_points = o3d.utility.Vector3dVector(pred)
+    #     target_points = o3d.utility.Vector3dVector(target)
+
+    #     pred_pcld = o3d.geometry.PointCloud()
+    #     target_pcld = o3d.geometry.PointCloud()
+
+    #     pred_pcld.points = pred_points
+    #     target_pcld.points = target_points
+
+    #     o3d.io.write_point_cloud("pred.ply", pred_pcld)
+    #     o3d.io.write_point_cloud("target.ply", target_pcld)
+    #     exit(-1)
+
+    #if dis < diameter[idx[0].item()]:
+    if dis < 0.015:
         success_count[idx[0].item()] += 1
         print('No.{0} Pass! Distance: {1}'.format(i, dis))
         fw.write('No.{0} Pass! Distance: {1}\n'.format(i, dis))
