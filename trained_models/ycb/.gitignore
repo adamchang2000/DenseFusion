@@ -1,1 +1,2 @@
 *.pth
+!pose_model_current.pth
