@@ -199,6 +199,8 @@ import math
 
 import numpy
 
+from scipy.spatial.transform import Rotation as R
+
 __version__ = '2018.02.08'
 __docformat__ = 'restructuredtext en'
 __all__ = ()
@@ -1897,38 +1899,63 @@ def rotation_matrix_from_vectors(vec1, vec2):
     :return mat: A transform matrix (3x3) which when applied to vec1, aligns it with vec2.
     """
     a, b = (vec1 / numpy.linalg.norm(vec1)).reshape(3), (vec2 / numpy.linalg.norm(vec2)).reshape(3)
+
+    if (numpy.array_equal(a, b)):
+        return numpy.eye(3)
+
     v = numpy.cross(a, b)
+
     c = numpy.dot(a, b)
     s = numpy.linalg.norm(v)
     kmat = numpy.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
     rotation_matrix = numpy.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
     return rotation_matrix
 
+def rotation_matrix_from_vectors_procedure(vec1, vec2):
+
+    vec1_xy = numpy.copy(vec1)
+    vec1_xy[2] = 0
+
+    vec2_xy = numpy.copy(vec2)
+    vec2_xy[2] = 0
+
+    #z vectors, we just rotate them 90 degrees across y axis
+    if (numpy.linalg.norm(vec1_xy) == 0):
+        vec1_xy = numpy.array([1, 0, 0])
+
+    if (numpy.linalg.norm(vec2_xy) == 0):
+        vec2_xy = numpy.array([1, 0, 0])
+
+    rot_1_to_1xy = rotation_matrix_from_vectors(vec1, vec1_xy)
+    rot_1xy_to_2xy = rotation_matrix_from_vectors(vec1_xy, vec2_xy)
+    rot_2xy_to_2 = rotation_matrix_from_vectors(vec2_xy, vec2)
+
+    return rot_2xy_to_2 @ rot_1xy_to_2xy @ rot_1_to_1xy
+
 
 def axis_angle_of_rotation_matrix(rot_mat):
     assert(rot_mat.shape == (3, 3))
 
-    angle = numpy.arccos(( rot_mat[0,0] + rot_mat[1,1] + rot_mat[2,2] - 1)/2)
-    x = (rot_mat[2,1] - rot_mat[1,2])/numpy.sqrt(numpy.square(rot_mat[2,1] - rot_mat[1,2])+numpy.square(rot_mat[0,2] - rot_mat[2,0])+numpy.square(rot_mat[1,0] - rot_mat[0,1]))
-    y = (rot_mat[0,2] - rot_mat[2,0])/numpy.sqrt(numpy.square(rot_mat[2,1] - rot_mat[1,2])+numpy.square(rot_mat[0,2] - rot_mat[2,0])+numpy.square(rot_mat[1,0] - rot_mat[0,1]))
-    z = (rot_mat[1,0] - rot_mat[0,1])/numpy.sqrt(numpy.square(rot_mat[2,1] - rot_mat[1,2])+numpy.square(rot_mat[0,2] - rot_mat[2,0])+numpy.square(rot_mat[1,0] - rot_mat[0,1]))
+    r = R.from_matrix(rot_mat)
 
-    return numpy.array([x,y,z]), angle
+    axis = r.as_rotvec()
+
+    angle = numpy.linalg.norm(axis)
+
+    axis /= angle
+
+    return axis, angle
 
 def rotation_matrix_of_axis_angle(axis, theta):
     """
     Return the rotation matrix associated with counterclockwise rotation about
     the given axis by theta radians.
     """
-    axis = numpy.asarray(axis)
-    axis = axis / math.sqrt(numpy.dot(axis, axis))
-    a = math.cos(theta / 2.0)
-    b, c, d = -axis * math.sin(theta / 2.0)
-    aa, bb, cc, dd = a * a, b * b, c * c, d * d
-    bc, ad, ac, ab, bd, cd = b * c, a * d, a * c, a * b, b * d, c * d
-    return numpy.array([[aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
-                     [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
-                     [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]])
+
+    r = R.from_rotvec(axis * theta)
+
+    return r.as_matrix()
+
 
 
 # def get_ortho(v):

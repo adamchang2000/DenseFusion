@@ -107,8 +107,8 @@ def main():
 
     print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the training set: {0}\nlength of the testing set: {1}\nnumber of sample points on mesh: {2}\nsymmetry object list: {3}'.format(len(dataset), len(test_dataset), opt.num_points_mesh, opt.sym_list))
 
-    criterion = Loss(opt.num_points_mesh, opt.num_rot_bins)
-    criterion_refine = Loss_refine(opt.num_points_mesh, opt.num_rot_bins)
+    criterion = Loss(opt.num_rot_bins)
+    criterion_refine = Loss_refine(opt.num_rot_bins)
 
     best_test = np.Inf
 
@@ -121,7 +121,7 @@ def main():
         logger = setup_logger('epoch%d' % epoch, os.path.join(opt.log_dir, 'epoch_%d_log.txt' % epoch))
         logger.info('Train time {0}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)) + ', ' + 'Training started'))
         train_count = 0
-        train_dis_avg = 0.0
+        train_loss_avg = 0.0
         if opt.refine_start:
             estimator.eval()
             refiner.train()
@@ -142,24 +142,24 @@ def main():
                                                                  Variable(model_points).cuda(), \
                                                                  Variable(idx).cuda()
                 pred_front, pred_rot_bins, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-                loss, dis, new_points = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, opt.w, opt.refine_start)
+                loss, new_points, new_rot_bins, new_t = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, opt.w, opt.refine_start)
                 
                 if opt.refine_start:
                     for ite in range(0, opt.iteration):
                         pred_front, pred_rot_bins, pred_t = refiner(new_points, emb, idx)
-                        dis, new_points = criterion_refine(pred_front, pred_rot_bins, pred_t, idx, new_points)
-                        dis.backward()
+                        loss, new_points, new_rot_bins, new_t = criterion_refine(pred_front, pred_rot_bins, pred_t, front_r, new_rot_bins, front_orig, new_t, idx, new_points)
+                        loss.backward()
                 else:
                     loss.backward()
 
-                train_dis_avg += dis.item()
+                train_loss_avg += loss.item()
                 train_count += 1
 
                 if train_count % opt.batch_size == 0:
-                    logger.info('Train time {0} Epoch {1} Batch {2} Frame {3} Avg_dis:{4}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, int(train_count / opt.batch_size), train_count, train_dis_avg / opt.batch_size))
+                    logger.info('Train time {0} Epoch {1} Batch {2} Frame {3} Avg_loss:{4}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, int(train_count / opt.batch_size), train_count, train_loss_avg / opt.batch_size))
                     optimizer.step()
                     optimizer.zero_grad()
-                    train_dis_avg = 0
+                    train_loss_avg = 0
 
                 if train_count != 0 and train_count % 1000 == 0:
                     if opt.refine_start:
@@ -172,40 +172,43 @@ def main():
 
         logger = setup_logger('epoch%d_test' % epoch, os.path.join(opt.log_dir, 'epoch_%d_test_log.txt' % epoch))
         logger.info('Test time {0}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)) + ', ' + 'Testing started'))
-        test_dis = 0.0
+        test_loss = 0.0
         test_count = 0
         estimator.eval()
         refiner.eval()
 
         for j, data in enumerate(testdataloader, 0):
-            points, choose, img, front_r, rot_bins, t, idx = data
-            points, choose, img, front_r, rot_bins, t, idx = Variable(points).cuda(), \
-                                                                Variable(choose).cuda(), \
-                                                                Variable(img).cuda(), \
-                                                                Variable(front_r).cuda(), \
-                                                                Variable(rot_bins).cuda(), \
-                                                                Variable(idx).cuda()
+            points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = data
+            points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = Variable(points).cuda(), \
+                                                                 Variable(choose).cuda(), \
+                                                                 Variable(img).cuda(), \
+                                                                 Variable(front_r).cuda(), \
+                                                                 Variable(rot_bins).cuda(), \
+                                                                 Variable(front_orig).cuda(), \
+                                                                 Variable(t).cuda(), \
+                                                                 Variable(model_points).cuda(), \
+                                                                 Variable(idx).cuda()
             pred_front, pred_rot_bins, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-            _, dis, new_points = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, t, idx, points, opt.w, opt.refine_start)
-            
+            loss, new_points, new_rot_bins, new_t = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, opt.w, opt.refine_start)
+                
             if opt.refine_start:
                 for ite in range(0, opt.iteration):
                     pred_front, pred_rot_bins, pred_t = refiner(new_points, emb, idx)
-                    dis, new_points = criterion_refine(pred_front, pred_rot_bins, pred_t, idx, new_points)
+                    loss, new_points, new_rot_bins, new_t = criterion_refine(pred_front, pred_rot_bins, pred_t, front_r, new_rot_bins, front_orig, new_t, idx, new_points)
 
-            test_dis += dis.item()
-            logger.info('Test time {0} Test Frame No.{1} dis:{2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), test_count, dis))
+            test_loss += loss.item()
+            logger.info('Test time {0} Test Frame No.{1} loss:{2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), test_count, loss))
 
             test_count += 1
 
-        test_dis = test_dis / test_count
-        logger.info('Test time {0} Epoch {1} TEST FINISH Avg dis: {2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, test_dis))
-        if test_dis <= best_test:
-            best_test = test_dis
+        test_loss = test_loss / test_count
+        logger.info('Test time {0} Epoch {1} TEST FINISH Avg dis: {2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, test_loss))
+        if test_loss <= best_test:
+            best_test = test_loss
             if opt.refine_start:
-                torch.save(refiner.state_dict(), '{0}/pose_refine_model_{1}_{2}.pth'.format(opt.outf, epoch, test_dis))
+                torch.save(refiner.state_dict(), '{0}/pose_refine_model_{1}_{2}.pth'.format(opt.outf, epoch, test_loss))
             else:
-                torch.save(estimator.state_dict(), '{0}/pose_model_{1}_{2}.pth'.format(opt.outf, epoch, test_dis))
+                torch.save(estimator.state_dict(), '{0}/pose_model_{1}_{2}.pth'.format(opt.outf, epoch, test_loss))
             print(epoch, '>>>>>>>>----------BEST TEST MODEL SAVED---------<<<<<<<<')
 
         if best_test < opt.decay_margin and not opt.decay_start:

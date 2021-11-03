@@ -8,7 +8,7 @@ import torchvision.transforms as transforms
 import argparse
 import time
 import random
-from lib.transformations import quaternion_from_euler, euler_matrix, random_quaternion, quaternion_matrix, rotation_matrix_from_vectors, axis_angle_of_rotation_matrix
+from lib.transformations import quaternion_from_euler, euler_matrix, random_quaternion, quaternion_matrix, rotation_matrix_from_vectors_procedure, axis_angle_of_rotation_matrix
 import numpy.ma as ma
 import copy
 import scipy.misc
@@ -209,8 +209,6 @@ class PoseDataset(data.Dataset):
         target_t = np.array([meta['poses'][:, :, idx][:, 3:4].flatten()])
         add_t = np.array([random.uniform(-self.noise_trans, self.noise_trans) for i in range(3)])
 
-        rot_bins = np.zeros(self.num_rot_bins).astype(np.float32)
-
         #calculating our histogram rotation representation
         
         #right now, we are only dealing with one "front" axis
@@ -221,9 +219,11 @@ class PoseDataset(data.Dataset):
 
         #calculate front axis in GT pose
         front_r = target_r @ front
-        
+
+        rot_bins = np.zeros(self.num_rot_bins).astype(np.float32)
+
         #find rotation matrix that goes from front -> front_r
-        Rf = rotation_matrix_from_vectors(front, front_r)
+        Rf = rotation_matrix_from_vectors_procedure(front, front_r)
 
         #find residual rotation
         R_around_front = target_r @ Rf.T
@@ -233,7 +233,7 @@ class PoseDataset(data.Dataset):
 
         assert (angle >= 0 and angle <= np.pi * 2)
         
-        angle_bin = int(angle / self.rot_bin_width)
+        angle_bin = int(angle / self.num_rot_bins)
 
         #calculate other peaks based on size of symm
         if len(symm) > 0:

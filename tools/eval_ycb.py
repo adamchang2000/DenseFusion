@@ -23,11 +23,15 @@ from torch.autograd import Variable
 from datasets.ycb.dataset import PoseDataset
 from lib.network import PoseNet, PoseRefineNet
 from lib.transformations import euler_matrix, quaternion_matrix, quaternion_from_matrix
+from lib.transformations import rotation_matrix_from_vectors, rotation_matrix_of_axis_angle
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir')
 parser.add_argument('--model', type=str, default = '',  help='resume PoseNet model')
 parser.add_argument('--refine_model', type=str, default = '',  help='resume PoseRefineNet model')
+
+parser.add_argument('--num_rot_bins', type=int, default = 36, help='number of bins discretizing the rotation around front')
+
 opt = parser.parse_args()
 
 norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -89,15 +93,18 @@ def get_bbox(posecnn_rois):
         cmin -= delt
     return rmin, rmax, cmin, cmax
 
-estimator = PoseNet(num_points = num_points, num_obj = num_obj)
+
+
+estimator = PoseNet(num_points = num_points, num_obj = num_obj, num_rot_bins = opt.num_rot_bins)
 estimator.cuda()
 estimator.load_state_dict(torch.load(opt.model))
 estimator.eval()
 
-refiner = PoseRefineNet(num_points = num_points, num_obj = num_obj)
-refiner.cuda()
-refiner.load_state_dict(torch.load(opt.refine_model))
-refiner.eval()
+if opt.refine_model:
+    refiner = PoseRefineNet(num_points = num_points, num_obj = num_obj, num_rot_bins = opt.num_rot_bins)
+    refiner.cuda()
+    refiner.load_state_dict(torch.load(opt.refine_model))
+    refiner.eval()
 
 testlist = []
 input_file = open('{0}/test_data_list.txt'.format(dataset_config_dir))
@@ -189,13 +196,43 @@ for now in range(0, 2949):
             cloud = cloud.view(1, num_points, 3)
             img_masked = img_masked.view(1, 3, img_masked.size()[1], img_masked.size()[2])
 
-            pred_r, pred_t, pred_c, emb = estimator(img_masked, cloud, choose, index)
-            pred_r = pred_r / torch.norm(pred_r, dim=2).view(1, num_points, 1)
+            pred_front, pred_rot_bins, pred_t, pred_c, emb = estimator(img_masked, cloud, choose, index)
 
             pred_c = pred_c.view(bs, num_points)
             how_max, which_max = torch.max(pred_c, 1)
-            pred_t = pred_t.view(bs * num_points, 1, 3)
-            points = cloud.view(bs * num_points, 1, 3)
+
+            print(pred_t.shape, points.shape)
+
+            pred_t = pred_t[which_max[0]] + points[which_max[0]]
+            points = points.view(1, bs * num_points, 3)
+
+            #we need to calculate the actual transformation that our rotation rep. represents
+
+            pred_front = pred_front.view(bs * num_points, 3)
+
+            best_c_pred_front = pred_front[which_max[0]]
+            best_c_rot_bins = pred_rot_bins[which_max[0]]
+
+            front_orig = front_orig.squeeze()
+
+            #calculate actual rotation
+            front_orig = front_orig.cpu().detach().numpy()
+            best_c_pred_front = best_c_pred_front.cpu().detach().numpy()
+            best_c_rot_bins = best_c_rot_bins.cpu().detach().numpy()
+
+            Rf = rotation_matrix_from_vectors(front_orig, best_c_pred_front)
+
+            #get the angle in radians based on highest histogram bin
+            angle = np.argmax(best_c_rot_bins) / best_c_rot_bins.shape[0] * 2 * np.pi
+
+            R_axis = rotation_matrix_of_axis_angle(best_c_pred_front, angle)
+
+            R_tot = (R_axis @ Rf).T
+
+            R_tot = torch.from_numpy(R_tot.astype(np.float32)).cuda().contiguous().view(bs, 3, 3)
+            pred_t = pred_t.view(bs, 1, 3).repeat(1, num_points, 1)
+
+            new_points = torch.bmm((points - pred_t), R_tot).contiguous().detach()
 
             my_r = pred_r[0][which_max[0]].view(-1).cpu().data.numpy()
             my_t = (points + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
