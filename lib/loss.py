@@ -42,41 +42,22 @@ def loss_calculation(pred_r, pred_t, pred_c, target, model_points, idx, points, 
     points = points.contiguous().view(bs * num_p, 1, 3)
     pred_c = pred_c.contiguous().view(bs * num_p)
 
-    pred = torch.add(torch.bmm(model_points, base), points + pred_t).contiguous()
+    pred = torch.add(torch.bmm(model_points, base), points + pred_t)
 
-    if not refine and idx[0].item() in sym_list:
+    if not refine:
+        if idx[0].item() in sym_list:
 
-        target = target[0].contiguous().view(-1, 3).unsqueeze(0)
-        pred_reshaped = pred.view(-1, 3).unsqueeze(0)
+            target = target[0].contiguous().view(-1, 3).unsqueeze(0)
+            pred = pred.contiguous().view(-1, 3).unsqueeze(0)
 
-        #distance from pred to nearest point on gt
-        _dists, inds_a = knn(target, pred_reshaped)
-        target_a = torch.index_select(target, 1, inds_a.view(-1))
+            dists, inds = knn(target, pred)
+            target = torch.index_select(target, 1, inds.view(-1))
 
-        target_a = target_a.view(bs * num_p, num_point_mesh, 3).contiguous()
-        pred_a = pred_reshaped.view(bs * num_p, num_point_mesh, 3).contiguous()
+            target = target.view(bs * num_p, num_point_mesh, 3).contiguous()
+            pred = pred.view(bs * num_p, num_point_mesh, 3).contiguous()
 
-        dis_a = torch.mean(torch.norm((pred_a - target_a), dim=2), dim=1)
-        loss_a = torch.mean((dis_a * pred_c - w * torch.log(pred_c)), dim=0)
-
-        #distance from gt to nearest point on pred
-        _dists, inds_b = knn(pred, ori_target)
-
-        pred = torch.gather(pred, 1, inds_b.repeat(1, 1, 3))
-
-        pred = pred.view(bs * num_p, num_point_mesh, 3).contiguous()
-        target = ori_target.view(bs * num_p, num_point_mesh, 3).contiguous()
-
-        dis_b = torch.mean(torch.norm((pred - target), dim=2), dim=1)
-        loss_b = torch.mean((dis_b * pred_c - w * torch.log(pred_c)), dim=0)
-
-        dis = (dis_a + dis_b) / 2
-        loss = loss_a + loss_b
-
-    else:
-
-        dis = torch.mean(torch.norm((pred - target), dim=2), dim=1)
-        loss = torch.mean((dis * pred_c - w * torch.log(pred_c)), dim=0)
+    dis = torch.mean(torch.norm((pred - target), dim=2), dim=1)
+    loss = torch.mean((dis * pred_c - w * torch.log(pred_c)), dim=0)
     
 
     pred_c = pred_c.view(bs, num_p)
