@@ -27,29 +27,29 @@ from lib.loss import Loss
 from lib.loss_refiner import Loss_refine
 from lib.utils import setup_logger
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', type=str, default = 'ycb', help='ycb or linemod')
-parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir (''YCB_Video_Dataset'' or ''Linemod_preprocessed'')')
-parser.add_argument('--batch_size', type=int, default = 8, help='batch size')
-parser.add_argument('--workers', type=int, default = 10, help='number of data loading workers')
-parser.add_argument('--lr', default=0.0001, help='learning rate')
-parser.add_argument('--lr_rate', default=0.3, help='learning rate decay rate')
-parser.add_argument('--w', default=0.015, help='learning rate')
-parser.add_argument('--w_rate', default=0.3, help='learning rate decay rate')
-parser.add_argument('--decay_margin', default=0.016, help='margin to decay lr & w')
-parser.add_argument('--refine_margin', default=0.013, help='margin to start the training of iterative refinement')
-parser.add_argument('--noise_trans', default=0.03, help='range of the random noise of translation added to the training data')
-parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
-parser.add_argument('--nepoch', type=int, default=500, help='max number of epochs to train')
-parser.add_argument('--resume_posenet', type=str, default = '',  help='resume PoseNet model')
-parser.add_argument('--resume_refinenet', type=str, default = '',  help='resume PoseRefineNet model')
-parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
-
-parser.add_argument('--num_rot_bins', type=int, default = 36, help='number of bins discretizing the rotation around front')
-opt = parser.parse_args()
-
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', type=str, default = 'ycb', help='ycb or linemod')
+    parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir (''YCB_Video_Dataset'' or ''Linemod_preprocessed'')')
+    parser.add_argument('--batch_size', type=int, default = 8, help='batch size')
+    parser.add_argument('--workers', type=int, default = 10, help='number of data loading workers')
+    parser.add_argument('--lr', default=0.0001, help='learning rate')
+    parser.add_argument('--lr_rate', default=0.3, help='learning rate decay rate')
+    parser.add_argument('--w', default=0.015, help='regularize confidence')
+    parser.add_argument('--w_rate', default=0.3, help='regularize confidence refiner decay')
+    parser.add_argument('--decay_margin', default=0.016, help='margin to decay lr & w')
+    parser.add_argument('--refine_margin', default=0.055, help='margin to start the training of iterative refinement')
+    parser.add_argument('--noise_trans', default=0.03, help='range of the random noise of translation added to the training data')
+    parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
+    parser.add_argument('--nepoch', type=int, default=500, help='max number of epochs to train')
+    parser.add_argument('--resume_posenet', type=str, default = '',  help='resume PoseNet model')
+    parser.add_argument('--resume_refinenet', type=str, default = '',  help='resume PoseRefineNet model')
+    parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
+
+    parser.add_argument('--num_rot_bins', type=int, default = 36, help='number of bins discretizing the rotation around front')
+    opt = parser.parse_args()
+
     opt.manualSeed = random.randint(1, 10000)
     random.seed(opt.manualSeed)
     torch.manual_seed(opt.manualSeed)
@@ -143,7 +143,7 @@ def main():
                                                                  Variable(idx).cuda()
                 pred_front, pred_rot_bins, pred_t, pred_c, emb = estimator(img, points, choose, idx)
                 loss, new_points, new_rot_bins, new_t = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, opt.w, opt.refine_start)
-                
+
                 if opt.refine_start:
                     for ite in range(0, opt.iteration):
                         pred_front, pred_rot_bins, pred_t = refiner(new_points, emb, idx)
@@ -237,9 +237,6 @@ def main():
             opt.num_points_mesh = dataset.get_num_points_mesh()
 
             print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the training set: {0}\nlength of the testing set: {1}\nnumber of sample points on mesh: {2}\nsymmetry object list: {3}'.format(len(dataset), len(test_dataset), opt.num_points_mesh, opt.sym_list))
-
-            criterion = Loss(opt.num_points_mesh, opt.sym_list)
-            criterion_refine = Loss_refine(opt.num_points_mesh, opt.sym_list)
 
 if __name__ == '__main__':
     main()

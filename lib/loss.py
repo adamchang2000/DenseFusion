@@ -12,6 +12,7 @@ from lib.transformations import rotation_matrix_from_vectors, rotation_matrix_of
 cross_entropy_loss = nn.CrossEntropyLoss(reduction='none')
 
 def loss_calculation(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, w, refine, num_rot_bins):
+
     bs, num_p, _ = pred_c.size()
     
     front_r = front_r.view(bs, 1, 3).repeat(1, bs*num_p, 1)
@@ -28,7 +29,7 @@ def loss_calculation(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bin
     t = t.repeat(1, bs*num_p, 1)
 
     #pred_t loss (L2 norm on translation)
-    pred_t_loss = torch.norm((pred_t - t), dim=2).unsqueeze(-1)
+    pred_t_loss = torch.norm(((pred_t + points) - t), dim=2).unsqueeze(-1)
 
     loss = torch.mean((pred_front_dis + pred_rot_loss + pred_t_loss) * pred_c - w * torch.log(pred_c))
 
@@ -44,7 +45,6 @@ def loss_calculation(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bin
 
     pred_t = pred_t[which_max[0]] + points[which_max[0]]
     points = points.view(1, bs * num_p, 3)
-
 
     #we need to calculate the actual transformation that our rotation rep. represents
 
@@ -77,7 +77,7 @@ def loss_calculation(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bin
     new_rot_bins = rot_bins[0]
     new_rot_bins = torch.roll(new_rot_bins, -np.argmax(best_c_rot_bins)).unsqueeze(0)
 
-    new_t = t[:,0,:] - pred_t[:,0,:]
+    new_t = torch.unsqueeze(t[:,0,:] - pred_t[:,0,:], 1)
 
     # # print('------------> ', dis[0][which_max[0]].item(), pred_c[0][which_max[0]].item(), idx[0].item())
     return loss, new_points, new_rot_bins, new_t
