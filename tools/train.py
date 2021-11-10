@@ -26,6 +26,7 @@ from lib.network import PoseNet, PoseRefineNet
 from lib.loss import Loss
 from lib.loss_refiner import Loss_refine
 from lib.utils import setup_logger
+from datetime import datetime
 
 
 def main():
@@ -39,7 +40,7 @@ def main():
     parser.add_argument('--w', default=0.015, help='regularize confidence')
     parser.add_argument('--w_rate', default=0.3, help='regularize confidence refiner decay')
     parser.add_argument('--decay_margin', default=0.016, help='margin to decay lr & w')
-    parser.add_argument('--refine_margin', default=0.055, help='margin to start the training of iterative refinement')
+    parser.add_argument('--refine_margin', default=0.04, help='margin to start the training of iterative refinement')
     parser.add_argument('--noise_trans', default=0.03, help='range of the random noise of translation added to the training data')
     parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
     parser.add_argument('--nepoch', type=int, default=500, help='max number of epochs to train')
@@ -131,6 +132,9 @@ def main():
 
         for rep in range(opt.repeat_epoch):
             for i, data in enumerate(dataloader, 0):
+
+                print("starting training sample", i, datetime.now())
+
                 points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = data
                 points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = Variable(points).cuda(), \
                                                                  Variable(choose).cuda(), \
@@ -142,7 +146,12 @@ def main():
                                                                  Variable(model_points).cuda(), \
                                                                  Variable(idx).cuda()
                 pred_front, pred_rot_bins, pred_t, pred_c, emb = estimator(img, points, choose, idx)
+
+                print("finished forward pass", i, datetime.now())
+
                 loss, new_points, new_rot_bins, new_t = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, opt.w, opt.refine_start)
+
+                print("finished loss", i, datetime.now())
 
                 if opt.refine_start:
                     for ite in range(0, opt.iteration):
@@ -166,6 +175,8 @@ def main():
                         torch.save(refiner.state_dict(), '{0}/pose_refine_model_current.pth'.format(opt.outf))
                     else:
                         torch.save(estimator.state_dict(), '{0}/pose_model_current.pth'.format(opt.outf))
+
+                print("finished training sample", i, datetime.now())
 
         print('>>>>>>>>----------epoch {0} train finish---------<<<<<<<<'.format(epoch))
 
