@@ -49,6 +49,7 @@ def main():
     parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
 
     parser.add_argument('--num_rot_bins', type=int, default = 180, help='number of bins discretizing the rotation around front')
+    parser.add_argument('--profile', action="store_true", default=False, help='should we performance profile?')
     opt = parser.parse_args()
 
     opt.manualSeed = random.randint(1, 10000)
@@ -93,14 +94,14 @@ def main():
         optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
 
     if opt.dataset == 'ycb':
-        dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins)
+        dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins, perform_profiling=opt.profile)
     elif opt.dataset == 'linemod':
-        dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins)
+        dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins, perform_profiling=opt.profile)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
     if opt.dataset == 'ycb':
-        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins)
+        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins, perform_profiling=opt.profile)
     elif opt.dataset == 'linemod':
-        test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins)
+        test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins, perform_profiling=opt.profile)
     testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
     
     opt.sym_list = dataset.get_sym_list()
@@ -132,8 +133,9 @@ def main():
 
         for rep in range(opt.repeat_epoch):
             for i, data in enumerate(dataloader, 0):
-
-                print("starting training sample", i, datetime.now())
+                
+                if opt.profile:
+                    print("starting training sample", i, datetime.now())
 
                 points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = data
                 points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = Variable(points).cuda(), \
@@ -147,11 +149,13 @@ def main():
                                                                  Variable(idx).cuda()
                 pred_front, pred_rot_bins, pred_t, pred_c, emb = estimator(img, points, choose, idx)
 
-                print("finished forward pass", i, datetime.now())
+                if opt.profile:
+                    print("finished forward pass", i, datetime.now())
 
                 loss, new_points, new_rot_bins, new_t = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, opt.w, opt.refine_start)
 
-                print("finished loss", i, datetime.now())
+                if opt.profile:
+                    print("finished loss", i, datetime.now())
 
                 if opt.refine_start:
                     for ite in range(0, opt.iteration):
@@ -176,7 +180,8 @@ def main():
                     else:
                         torch.save(estimator.state_dict(), '{0}/pose_model_current.pth'.format(opt.outf))
 
-                print("finished training sample", i, datetime.now())
+                if opt.profile:
+                    print("finished training sample", i, datetime.now())
 
         print('>>>>>>>>----------epoch {0} train finish---------<<<<<<<<'.format(epoch))
 
