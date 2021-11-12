@@ -11,6 +11,10 @@ from lib.transformations import rotation_matrix_from_vectors, rotation_matrix_of
 
 cross_entropy_loss = nn.CrossEntropyLoss(reduction='none')
 
+rot_bins_loss_coeff = 1
+front_loss_coeff = 1
+translation_loss_coeff = 4
+
 def loss_calculation(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, w, refine, num_rot_bins):
 
     bs, num_p, _ = pred_c.size()
@@ -31,7 +35,7 @@ def loss_calculation(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bin
     #pred_t loss (L2 norm on translation)
     pred_t_loss = torch.norm(((pred_t + points) - t), dim=2).unsqueeze(-1)
 
-    loss = torch.mean((pred_front_dis + pred_rot_loss + pred_t_loss) * pred_c - w * torch.log(pred_c))
+    loss = torch.mean((pred_front_dis * front_loss_coeff + pred_rot_loss * rot_bins_loss_coeff + pred_t_loss * translation_loss_coeff) * pred_c - w * torch.log(pred_c))
 
     pred_t = pred_t.contiguous().view(bs * num_p, 1, 3)
 

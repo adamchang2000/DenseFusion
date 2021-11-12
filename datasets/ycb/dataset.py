@@ -8,7 +8,7 @@ import torchvision.transforms as transforms
 import argparse
 import time
 import random
-from lib.transformations import quaternion_from_euler, euler_matrix, random_quaternion, quaternion_matrix, rotation_matrix_from_vectors_procedure, axis_angle_of_rotation_matrix
+from lib.transformations import quaternion_from_euler, euler_matrix, random_quaternion, quaternion_matrix, rotation_matrix_from_vectors_procedure, axis_angle_of_rotation_matrix, rotation_matrix_of_axis_angle
 import numpy.ma as ma
 import copy
 import scipy.misc
@@ -305,9 +305,19 @@ class PoseDataset(data.Dataset):
         #axis will be the same as R_around_front
         axis, angle = axis_angle_of_rotation_matrix(R_around_front)
 
+        #negate the axis and the angle
+        if np.abs(np.linalg.norm(axis + front_r)) < 0.001:
+            axis = -axis
+            angle = -angle
+
+        if angle < 0:
+            angle += np.pi * 2
+        if angle > np.pi * 2:
+            angle -= np.pi * 2
+
         assert (angle >= 0 and angle <= np.pi * 2)
         
-        angle_bin = int(angle / self.num_rot_bins)
+        angle_bin = int(angle / 2 / np.pi * self.num_rot_bins)
 
         #calculate other peaks based on size of symm
         if len(symm) > 0:
@@ -382,6 +392,8 @@ class PoseDataset(data.Dataset):
         depth = '{0}/{1}-depth.png'.format(self.root, self.list[index])
         label = '{0}/{1}-label.png'.format(self.root, self.list[index])
         meta = '{0}/{1}-meta.mat'.format(self.root, self.list[index])
+
+        print("loading sample", self.list[index])
 
         if color in self.preloaded_img:
             img = self.preloaded_img[color]
@@ -477,8 +489,16 @@ class PoseDataset(data.Dataset):
 
         rot_bins = np.zeros(self.num_rot_bins).astype(np.float32)
 
+        print("FRONT 1", front)
+
         #find rotation matrix that goes from front -> front_r
         Rf = rotation_matrix_from_vectors_procedure(front, front_r)
+
+        print("original calculated rf")
+        print(Rf)
+
+        print("front_r from gt", front_r)
+        print("Rf @ front", Rf @ front)
 
         #find residual rotation
         R_around_front = target_r @ Rf.T
@@ -486,9 +506,31 @@ class PoseDataset(data.Dataset):
         #axis will be the same as R_around_front
         axis, angle = axis_angle_of_rotation_matrix(R_around_front)
 
+        #negate the axis and the angle
+        if np.abs(np.linalg.norm(axis + front_r)) < 0.001:
+            print("axis flipped")
+            axis = -axis
+            angle = -angle
+
+        print("these should be the same")
+        print(front_r, axis)
+
+        print("test here, target_r, then our calculated")
+
+        R_around_front_recovered = rotation_matrix_of_axis_angle(axis, angle)
+
+        print(target_r)
+        print(R_around_front @ Rf)
+        print(R_around_front_recovered @ Rf)
+
+        if angle < 0:
+            angle += np.pi * 2
+        if angle > np.pi * 2:
+            angle -= np.pi * 2
+
         assert (angle >= 0 and angle <= np.pi * 2)
         
-        angle_bin = int(angle / self.num_rot_bins)
+        angle_bin = int(angle / 2 / np.pi * self.num_rot_bins)
 
         #calculate other peaks based on size of symm
         if len(symm) > 0:
@@ -544,9 +586,11 @@ class PoseDataset(data.Dataset):
         
         return cloud.astype(np.float32), \
                choose.astype(np.int32), \
-               self.norm(img_masked.astype(np.float32)), \
+               self.norm(torch.from_numpy(img_masked.astype(np.float32))).numpy(), \
                front_r.astype(np.float32), \
                rot_bins.astype(np.float32), \
+               angle.astype(np.float32), \
+               Rf.astype(np.float32), \
                front.astype(np.float32), \
                target_r.astype(np.float32), \
                target_t.astype(np.float32), \
@@ -609,13 +653,6 @@ def get_bbox(label):
         cmax = img_length
         cmin -= delt
     return rmin, rmax, cmin, cmax
-
-if __name__ == "__main__":
-    dataset = PoseDataset('test', 1000, False, './datasets/ycb/YCB_Video_Dataset', 0, False, 36)
-
-    data = dataset.get_item_debug(0)
-    cloud, choose, img_masked, front_r, rot_bins, front, target_r, target_t, model_points, idx = data
-
-    print(target_r)
+    
 
 

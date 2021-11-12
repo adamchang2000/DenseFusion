@@ -26,25 +26,20 @@ from lib.network import PoseNet, PoseRefineNet
 from lib.loss import Loss
 from lib.loss_refiner import Loss_refine
 
-from lib.transformations import rotation_matrix_from_vectors, rotation_matrix_of_axis_angle
+from lib.transformations import rotation_matrix_from_vectors_procedure, rotation_matrix_of_axis_angle
 
 import open3d as o3d
 
 def visualize_points(model_points, front_orig, front, angle, t, label):
-
-    model_points = model_points.cpu().detach().numpy()
-    front = front.cpu().detach().numpy()
-    front_orig = front_orig.cpu().detach().numpy()
-    angle = angle.cpu().detach().numpy()
-    t = t.cpu().detach().numpy()
-
-    Rf = rotation_matrix_from_vectors(front_orig, front)
+    Rf = rotation_matrix_from_vectors_procedure(front_orig, front)
 
     R_axis = rotation_matrix_of_axis_angle(front, angle)
 
-    R_tot = (R_axis @ Rf).T
+    R_tot = (R_axis @ Rf)
 
-    pts = (model_points @ R_tot + t).squeeze()
+    print("our rot rep", R_tot)
+
+    pts = (model_points @ R_tot.T + t).squeeze()
 
     pcld = o3d.geometry.PointCloud()
     pts = o3d.utility.Vector3dVector(pts)
@@ -54,7 +49,7 @@ def visualize_points(model_points, front_orig, front, angle, t, label):
     o3d.io.write_point_cloud(label + ".ply", pcld)
 
 def visualize_pointcloud(points, label):
-    points = points.cpu().detach().numpy().reshape((-1, 3))
+    points = points.reshape((-1, 3))
 
     pcld = o3d.geometry.PointCloud()
     points = o3d.utility.Vector3dVector(points)
@@ -112,11 +107,6 @@ def main():
         raise Exception("this is visualizer code, pls pass in a model lol")
 
     if opt.dataset == 'ycb':
-        dataset = PoseDataset_ycb('train', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', opt.num_rot_bins)
-    elif opt.dataset == 'linemod':
-        dataset = PoseDataset_linemod('train', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', opt.num_rot_bins)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
-    if opt.dataset == 'ycb':
         test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', opt.num_rot_bins)
     elif opt.dataset == 'linemod':
         test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', opt.num_rot_bins)
@@ -130,19 +120,12 @@ def main():
     criterion = Loss(opt.num_rot_bins)
     criterion_refine = Loss_refine(opt.num_rot_bins)
 
-    best_test = np.Inf
-
-    st_time = time.time()
-
-    train_count = 0
-    train_loss_avg = 0.0
-
     estimator.eval()
 
     if opt.refine_model != "":
         refiner.eval()
 
-    for i, data in enumerate(dataloader, 0):
+    for i, data in enumerate(testdataloader, 0):
         points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = data
         points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = Variable(points).cuda(), \
                                                             Variable(choose).cuda(), \
@@ -191,77 +174,6 @@ def main():
             print("finished visualizing!")
             exit()
 
-
-    # logger = setup_logger('epoch%d_test' % epoch, os.path.join(opt.log_dir, 'epoch_%d_test_log.txt' % epoch))
-    # logger.info('Test time {0}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)) + ', ' + 'Testing started'))
-    # test_loss = 0.0
-    # test_count = 0
-    # estimator.eval()
-    # refiner.eval()
-
-    # for j, data in enumerate(testdataloader, 0):
-    #     points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = data
-    #     points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = Variable(points).cuda(), \
-    #                                                          Variable(choose).cuda(), \
-    #                                                          Variable(img).cuda(), \
-    #                                                          Variable(front_r).cuda(), \
-    #                                                          Variable(rot_bins).cuda(), \
-    #                                                          Variable(front_orig).cuda(), \
-    #                                                          Variable(t).cuda(), \
-    #                                                          Variable(model_points).cuda(), \
-    #                                                          Variable(idx).cuda()
-    #     pred_front, pred_rot_bins, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-    #     loss, new_points, new_rot_bins, new_t = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, opt.w, opt.refine_start)
-            
-    #     if opt.refine_start:
-    #         for ite in range(0, opt.iteration):
-    #             pred_front, pred_rot_bins, pred_t = refiner(new_points, emb, idx)
-    #             loss, new_points, new_rot_bins, new_t = criterion_refine(pred_front, pred_rot_bins, pred_t, front_r, new_rot_bins, front_orig, new_t, idx, new_points)
-
-    #     test_loss += loss.item()
-    #     logger.info('Test time {0} Test Frame No.{1} loss:{2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), test_count, loss))
-
-    #     test_count += 1
-
-    # test_loss = test_loss / test_count
-    # logger.info('Test time {0} Epoch {1} TEST FINISH Avg dis: {2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, test_loss))
-    # if test_loss <= best_test:
-    #     best_test = test_loss
-    #     if opt.refine_start:
-    #         torch.save(refiner.state_dict(), '{0}/pose_refine_model_{1}_{2}.pth'.format(opt.outf, epoch, test_loss))
-    #     else:
-    #         torch.save(estimator.state_dict(), '{0}/pose_model_{1}_{2}.pth'.format(opt.outf, epoch, test_loss))
-    #     print(epoch, '>>>>>>>>----------BEST TEST MODEL SAVED---------<<<<<<<<')
-
-    # if best_test < opt.decay_margin and not opt.decay_start:
-    #     opt.decay_start = True
-    #     opt.lr *= opt.lr_rate
-    #     opt.w *= opt.w_rate
-    #     optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
-
-    # if best_test < opt.refine_margin and not opt.refine_start:
-    #     opt.refine_start = True
-    #     opt.batch_size = int(opt.batch_size / opt.iteration)
-    #     optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
-
-    #     if opt.dataset == 'ycb':
-    #         dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins)
-    #     elif opt.dataset == 'linemod':
-    #         dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins)
-    #     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
-    #     if opt.dataset == 'ycb':
-    #         test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins)
-    #     elif opt.dataset == 'linemod':
-    #         test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins)
-    #     testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
-        
-    #     opt.sym_list = dataset.get_sym_list()
-    #     opt.num_points_mesh = dataset.get_num_points_mesh()
-
-    #     print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the training set: {0}\nlength of the testing set: {1}\nnumber of sample points on mesh: {2}\nsymmetry object list: {3}'.format(len(dataset), len(test_dataset), opt.num_points_mesh, opt.sym_list))
-
-    #     criterion = Loss(opt.num_points_mesh, opt.sym_list)
-    #     criterion_refine = Loss_refine(opt.num_points_mesh, opt.sym_list)
 
 if __name__ == '__main__':
     main()

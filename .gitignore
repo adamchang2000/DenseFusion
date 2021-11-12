@@ -9,3 +9,4 @@ __init__.*
 *.pth
 YCB_Video_toolbox
 *.DS_Store
+*.vscode

@@ -11,6 +11,10 @@ from lib.transformations import rotation_matrix_from_vectors, rotation_matrix_of
 
 cross_entropy_loss = nn.CrossEntropyLoss(reduction='none')
 
+rot_bins_loss_coeff = 1
+front_loss_coeff = 1
+translation_loss_coeff = 4
+
 def loss_calculation(pred_front, pred_rot_bins, pred_t, front_r, rot_bins, front_orig, t, idx, points, num_rot_bins):
     
     pred_front = pred_front.view((1, 1, 3))
@@ -36,7 +40,7 @@ def loss_calculation(pred_front, pred_rot_bins, pred_t, front_r, rot_bins, front
     #pred_t loss (L2 norm on translation)
     pred_t_loss = torch.norm((pred_t - t), dim=2).unsqueeze(-1)
 
-    loss = torch.mean(pred_front_dis + pred_rot_loss + pred_t_loss)
+    loss = torch.mean(pred_front_dis * front_loss_coeff + pred_rot_loss * rot_bins_loss_coeff + pred_t_loss * translation_loss_coeff)
 
     #calculating new model_points for refiner
     #requires finding highest confidence front and theta and solving for rotation matrix
