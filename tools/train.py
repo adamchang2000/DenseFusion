@@ -48,7 +48,7 @@ def main():
     parser.add_argument('--resume_refinenet', type=str, default = '',  help='resume PoseRefineNet model')
     parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
 
-    parser.add_argument('--num_rot_bins', type=int, default = 36, help='number of bins discretizing the rotation around front')
+    parser.add_argument('--num_rot_bins', type=int, default = 180, help='number of bins discretizing the rotation around front')
     opt = parser.parse_args()
 
     opt.manualSeed = random.randint(1, 10000)
