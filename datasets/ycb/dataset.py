@@ -181,7 +181,7 @@ class PoseDataset(data.Dataset):
     def __getitem__(self, index):
 
         if self.perform_profiling:
-            print("entering get item", index, datetime.now())
+            print("entering get item {0} {1}".format(index, datetime.now()))
 
         color = '{0}/{1}-color.png'.format(self.root, self.list[index])
         depth = '{0}/{1}-depth.png'.format(self.root, self.list[index])
@@ -200,7 +200,7 @@ class PoseDataset(data.Dataset):
             meta = scio.loadmat(meta)
 
         if self.perform_profiling:
-            print("finished loading from disk", index, datetime.now())
+            print("finished loading from disk {0} {1}".format(index, datetime.now()))
 
         if self.list[index][:8] != 'data_syn' and int(self.list[index][5:9]) >= 60:
             cam_cx = self.cam_cx_2
@@ -239,7 +239,7 @@ class PoseDataset(data.Dataset):
                     break
 
         if self.perform_profiling:
-            print("finished add front aug", index, datetime.now())
+            print("finished add front aug {0} {1}".format(index, datetime.now()))
 
         obj = meta['cls_indexes'].flatten().astype(np.int32)
 
@@ -252,7 +252,7 @@ class PoseDataset(data.Dataset):
                 break
 
         if self.perform_profiling:
-            print("finished selecting object", index, datetime.now())
+            print("finished selecting object {0} {1}".format(index, datetime.now()))
 
         if self.add_noise:
             img = self.trancolor(img)
@@ -260,7 +260,7 @@ class PoseDataset(data.Dataset):
         rmin, rmax, cmin, cmax = get_bbox(mask_label)
 
         if self.perform_profiling:
-            print("finished get_bbox", index, datetime.now())
+            print("finished get_bbox {0} {1}".format(index, datetime.now()))
 
         img = np.transpose(np.array(img)[:, :, :3], (2, 0, 1))[:, rmin:rmax, cmin:cmax]
 
@@ -273,26 +273,26 @@ class PoseDataset(data.Dataset):
             img_masked = img
 
         if self.perform_profiling:
-            print("finished first img_masked", index, datetime.now())
+            print("finished first img_masked {0} {1}".format(index, datetime.now()))    
 
         if self.add_noise and add_front:
             img_masked = img_masked * mask_front[rmin:rmax, cmin:cmax] + front[:, rmin:rmax, cmin:cmax] * ~(mask_front[rmin:rmax, cmin:cmax])
 
         if self.perform_profiling:
-            print("finished second img_masked", index, datetime.now())
+            print("finished second img_masked {0} {1}".format(index, datetime.now()))
 
         if self.list[index][:8] == 'data_syn':
             img_masked = img_masked + np.random.normal(loc=0.0, scale=7.0, size=img_masked.shape)
 
         if self.perform_profiling:
-            print("finished third img_masked", index, datetime.now())
+            print("finished third img_masked {0} {1}".format(index, datetime.now()))
 
         target_r = meta['poses'][:, :, idx][:, 0:3]
         target_t = np.array([meta['poses'][:, :, idx][:, 3:4].flatten()])
         add_t = np.array([random.uniform(-self.noise_trans, self.noise_trans) for i in range(3)])
 
         if self.perform_profiling:
-            print("finished doing densefusion's stuff", index, datetime.now())
+            print("finished doing densefusion's stuff {0} {1}".format(index, datetime.now()))
 
         #calculating our histogram rotation representation
         
@@ -349,7 +349,7 @@ class PoseDataset(data.Dataset):
         rot_bins /= np.linalg.norm(rot_bins, ord=1)
 
         if self.perform_profiling:
-            print("finished my rotation stuff", index, datetime.now())
+            print("finished my rotation stuff {0} {1}".format(index, datetime.now()))
 
         choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
         if len(choose) > self.num_pt:
@@ -361,7 +361,7 @@ class PoseDataset(data.Dataset):
             choose = np.pad(choose, (0, self.num_pt - len(choose)), 'wrap')
 
         if self.perform_profiling:
-            print("finished sampling points from roi", index, datetime.now())
+            print("finished sampling points from roi {0} {1}".format(index, datetime.now()))
         
         depth_masked = depth[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         xmap_masked = self.xmap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
@@ -389,7 +389,7 @@ class PoseDataset(data.Dataset):
         model_points = np.delete(self.cld[obj[idx]], dellist, axis=0)
 
         if self.perform_profiling:
-            print("finished computations", index, datetime.now())
+            print("finished computations {0} {1}".format(index, datetime.now()))
         
         return torch.from_numpy(cloud.astype(np.float32)), \
                torch.LongTensor(choose.astype(np.int32)), \
