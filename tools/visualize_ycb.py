@@ -31,6 +31,13 @@ from lib.transformations import rotation_matrix_from_vectors_procedure, rotation
 import open3d as o3d
 
 def visualize_points(model_points, front_orig, front, angle, t, label):
+
+    model_points = model_points.cpu().detach().numpy()
+    front_orig = front_orig.cpu().detach().numpy()
+    front = front.cpu().detach().numpy()
+    angle = angle.cpu().detach().numpy()
+    t = t.cpu().detach().numpy()
+
     Rf = rotation_matrix_from_vectors_procedure(front_orig, front)
 
     R_axis = rotation_matrix_of_axis_angle(front, angle)
@@ -49,6 +56,9 @@ def visualize_points(model_points, front_orig, front, angle, t, label):
     o3d.io.write_point_cloud(label + ".ply", pcld)
 
 def visualize_pointcloud(points, label):
+
+    points = points.cpu().detach().numpy()
+
     points = points.reshape((-1, 3))
 
     pcld = o3d.geometry.PointCloud()
@@ -112,10 +122,10 @@ def main():
         test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', opt.num_rot_bins)
     testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
     
-    opt.sym_list = dataset.get_sym_list()
-    opt.num_points_mesh = dataset.get_num_points_mesh()
+    opt.sym_list = test_dataset.get_sym_list()
+    opt.num_points_mesh = test_dataset.get_num_points_mesh()
 
-    print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the training set: {0}\nlength of the testing set: {1}\nnumber of sample points on mesh: {2}\nsymmetry object list: {3}'.format(len(dataset), len(test_dataset), opt.num_points_mesh, opt.sym_list))
+    print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the testing set: {0}\nnumber of sample points on mesh: {1}\nsymmetry object list: {2}'.format(len(test_dataset), opt.num_points_mesh, opt.sym_list))
 
     criterion = Loss(opt.num_rot_bins)
     criterion_refine = Loss_refine(opt.num_rot_bins)
