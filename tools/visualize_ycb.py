@@ -30,6 +30,35 @@ from lib.transformations import rotation_matrix_from_vectors_procedure, rotation
 
 import open3d as o3d
 
+def dist2(x, y):
+    nx, dimx = x.shape
+    ny, dimy = y.shape
+    assert(dimx == dimy)
+
+    return (np.ones((ny, 1)) * np.sum((x**2).T, axis=0)).T + \
+        np.ones((nx, 1)) * np.sum((y**2).T, axis=0) - \
+        2 * np.inner(x, y)
+
+def get_points(model_points, front_orig, front, angle, t):
+
+    model_points = model_points.cpu().detach().numpy()
+    front_orig = front_orig.cpu().detach().numpy().squeeze()
+    front = front.cpu().detach().numpy()
+    angle = angle.cpu().detach().numpy()
+    t = t.cpu().detach().numpy()
+
+    Rf = rotation_matrix_from_vectors_procedure(front_orig, front)
+
+    R_axis = rotation_matrix_of_axis_angle(front, angle)
+
+    R_tot = (R_axis @ Rf)
+
+    print("our rot rep", R_tot)
+
+    pts = (model_points @ R_tot.T + t).squeeze()
+
+    return pts
+
 def visualize_points(model_points, front_orig, front, angle, t, label):
 
     model_points = model_points.cpu().detach().numpy()
@@ -135,6 +164,8 @@ def main():
     if opt.refine_model != "":
         refiner.eval()
 
+    dists = []
+
     for i, data in enumerate(testdataloader, 0):
         points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = data
         points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = Variable(points).cuda(), \
@@ -175,14 +206,21 @@ def main():
                 loss, new_points, new_rot_bins, new_t = criterion_refine(pred_front, pred_rot_bins, pred_t, front_r, new_rot_bins, front_orig, new_t, idx, new_points)
 
 
+        pts_gt = get_points(model_points, front_orig, gt_front, gt_theta, gt_t)
+        pts_pred = get_points(model_points, front_orig, my_front, my_theta, my_t)
 
-        visualize_points(model_points, front_orig, gt_front, gt_theta, gt_t, "{0}_gt".format(i))
-        visualize_points(model_points, front_orig, my_front, my_theta, my_t, "{0}_pred".format(i))
-        visualize_pointcloud(points, "{0}_projected_depth".format(i))
+        dist = dist2(pts_gt, pts_pred)
+        dists.append(np.mean(np.min(dist, axis=1)))
 
-        if i >= opt.num_visualized:
-            print("finished visualizing!")
-            exit()
+        # visualize_points(model_points, front_orig, gt_front, gt_theta, gt_t, "{0}_gt".format(i))
+        # visualize_points(model_points, front_orig, my_front, my_theta, my_t, "{0}_pred".format(i))
+        # visualize_pointcloud(points, "{0}_projected_depth".format(i))
+
+        # if i >= opt.num_visualized:
+        #     print("finished visualizing!")
+        #     exit()
+
+    print(np.mean(dists))
 
 
 if __name__ == '__main__':
