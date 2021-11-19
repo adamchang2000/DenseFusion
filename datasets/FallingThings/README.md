@@ -3,5 +3,7 @@ The two .py scripts are used to verify if the model points * fixed_model_transfo
 2. testfat_rescale.py is to verify the Falling things model and dataset
 
 RoomDemo_samesize contains our dataset.
+
 power_drill_with_model contains one object of FallingThings and a corresponding ground truth infomation.
+
 models contains the original model files.
