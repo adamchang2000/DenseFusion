@@ -234,4 +234,5 @@ def main():
             criterion_refine = Loss_refine(opt.num_points_mesh, opt.sym_list)
 
 if __name__ == '__main__':
+    os.environ['KMP_DUPLICATE_LIB_OK']='True'
     main()
