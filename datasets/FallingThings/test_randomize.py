@@ -67,7 +67,7 @@ def get_xprime(cx,cy,fx,fy, pt,depth):
 
 
 index = '000051'
-floder = 'RoomDemo_obj3_11'
+floder = 'RoomDemo_obj3_random'
 pic_dir = floder+'/'
 cam_f = open(pic_dir+'_camera_settings.json','r')
 cam_data = json.load(cam_f)
