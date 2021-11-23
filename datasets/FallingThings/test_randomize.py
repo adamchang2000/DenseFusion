@@ -66,8 +66,8 @@ def get_xprime(cx,cy,fx,fy, pt,depth):
     return point
 
 
-index = '000003'
-floder = 'RoomDemo_obj3_random'
+index = '000051'
+floder = 'RoomDemo_obj3_11'
 pic_dir = floder+'/'
 cam_f = open(pic_dir+'_camera_settings.json','r')
 cam_data = json.load(cam_f)
@@ -122,8 +122,8 @@ mycloud = o3d.geometry.PointCloud()
 mycloud.points = o3d.utility.Vector3dVector(pc_whole)
 
 #####################################
-
-fixed_config = open(pic_dir+'_object_settings.json'.format(floder), )
+# fixed_config = open(pic_dir+'_object_settings.json'.format(floder), )
+fixed_config = open('RoomDemo_obj3_static/_object_settings.json'.format(floder), )
 fixed_data = json.load(fixed_config)
 fixed_transform = np.array(fixed_data['exported_objects'][0]['fixed_model_transform'])
 fixed_rotation = fixed_transform[:3, :3]
@@ -139,28 +139,28 @@ fixed_translation /= 100.
 # Image._show(img)
 f = open('./{1}/{0}.left.json'.format(index, floder), )
 data = json.load(f)
-# target_tranform = np.array(data['objects'][0]['pose_transform'])
-target_quaternion = np.array(data['objects'][0]['quaternion_xyzw'])
-pose_rot_permuted = getPoseTransPermuted(target_quaternion)
+target_tranform = np.array(data['objects'][0]['pose_transform'])
+# target_quaternion = np.array(data['objects'][0]['quaternion_xyzw'])
+# pose_rot_permuted = getPoseTransPermuted(target_quaternion)
 p = np.array([[ 0, 0,  1],
               [ 1, 0,  0],
               [ 0,-1,  0]])
-real_target_rotation = np.matmul(pose_rot_permuted.T, p)
+# real_target_rotation = np.matmul(pose_rot_permuted.T, p)
 # target_rotation = quaternion_to_rotation_matrix(target_quaternion)
 # real_target_rotation = target_rotation
 
-# target_rotation = target_tranform[:3,:3]
+target_rotation = target_tranform[:3,:3]
 # real_target_rotation = target_rotation
-# real_target_rotation = np.matmul(target_rotation.T, p)
+real_target_rotation = np.matmul(target_rotation.T, p)
 target_translation = np.array(data['objects'][0]['location'])/100
 
 
-ry90 = np.array([[0.,0,-1],
-                 [0,1,0],
-                 [1,0,0]])
-rz_90 = np.array([[0.,1,0],
-                 [-1,0,0],
-                 [0,0,1]])
+# ry90 = np.array([[0.,0,-1],
+#                  [0,1,0],
+#                  [1,0,0]])
+# rz_90 = np.array([[0.,1,0],
+#                  [-1,0,0],
+#                  [0,0,1]])
 ######################read from glb##############################
 # gltf = GLTF2().load_binary('models/1.glb')
 #
@@ -214,7 +214,7 @@ print(fixed_translation)
 
 # target = np.dot(points, rz_90.T)
 target = np.dot(points, fixed_rotation)#+ fixed_translation
-target = np.dot(target, real_target_rotation)
+target = np.dot(target, real_target_rotation.T)
 target+= target_translation
 
 # target = np.dot(target, fixed_rotation.T)
