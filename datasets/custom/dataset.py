@@ -23,7 +23,7 @@ import cv2
 
 class PoseDataset(data.Dataset):
     def __init__(self, mode, num, add_noise, root, noise_trans, refine):
-        self.objlist = [1, 2]
+        self.objlist = [1]
         self.mode = mode
 
         self.list_rgb = []
@@ -39,6 +39,24 @@ class PoseDataset(data.Dataset):
 
         item_count = 0
         for item in self.objlist:
+            path = "{0}/{1}".format(self.root, item)
+            print(path)
+            files = [f.split('.')[0] for f in os.listdir(path) if f.find("left.png") != -1]
+            print(files)
+
+            for file in files: 
+                self.list_rgb.append('{0}/{1}.left.png'.format(path, item, input_line))
+                self.list_depth.append('{0}/data/{1}/depth/{2}.png'.format(self.root, '%02d' % item, input_line))
+                if self.mode == 'eval':
+                    self.list_label.append('{0}/segnet_results/{1}_label/{2}_label.png'.format(self.root, '%02d' % item, input_line))
+                else:
+                    self.list_label.append('{0}/data/{1}/mask/{2}.png'.format(self.root, '%02d' % item, input_line))
+                
+                #self.list_obj.append(item)
+                #self.list_rank.append(int(input_line))
+
+            
+            '''
             if self.mode == 'train':
                 input_file = open('{0}/data/{1}/train.txt'.format(self.root, '%02d' % item))
             else:
@@ -67,6 +85,7 @@ class PoseDataset(data.Dataset):
             self.pt[item] = ply_vtx('{0}/models/obj_{1}.ply'.format(self.root, '%02d' % item))
             
             print("Object {0} buffer loaded".format(item))
+            '''
 
         self.length = len(self.list_rgb)
 
