@@ -1,0 +1,42 @@
+{
+	"camera_settings": [
+		{
+			"name": "ColorCam",
+			"horizontal_fov": 70,
+			"intrinsic_settings":
+			{
+				"resX": 1280,
+				"resY": 720,
+				"fx": 914.0147705078125,
+				"fy": 914.0147705078125,
+				"cx": 640,
+				"cy": 360,
+				"s": 0
+			},
+			"captured_image_size":
+			{
+				"width": 1280,
+				"height": 720
+			}
+		},
+		{
+			"name": "InfraredCam",
+			"horizontal_fov": 70,
+			"intrinsic_settings":
+			{
+				"resX": 1280,
+				"resY": 720,
+				"fx": 914.0147705078125,
+				"fy": 914.0147705078125,
+				"cx": 640,
+				"cy": 360,
+				"s": 0
+			},
+			"captured_image_size":
+			{
+				"width": 1280,
+				"height": 720
+			}
+		}
+	]
+}
