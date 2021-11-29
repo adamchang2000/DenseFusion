@@ -110,7 +110,11 @@ class PoseDataset(data.Dataset):
         bbox = meta["objects"][0]["bounding_box"]
         rmin, rmax, cmin, cmax = int(bbox["top_left"][0]), int(bbox["bottom_right"][0]), int(bbox["top_left"][1]), int(bbox["bottom_right"][1])
 
+        _, h, w = img_masked.shape
+        rmin, rmax, cmin, cmax = max(0, rmin), min(h, rmax), max(0, cmin), min(w, cmax)
+
         img_masked = img_masked[:, rmin:rmax, cmin:cmax]
+
         #p_img = np.transpose(img_masked, (1, 2, 0))
         #Image._show(Image.fromarray(p_img))
 
@@ -135,7 +139,9 @@ class PoseDataset(data.Dataset):
         choose = np.array([choose])
 
         cam_scale = 1.0
-        pt2 = depth_masked / cam_scale
+
+        #applying siming's depth fix
+        pt2 = depth_masked / cam_scale / 65535.0 * 10
         pt0 = (ymap_masked - self.cam_cx) * pt2 / self.cam_fx
         pt1 = (xmap_masked - self.cam_cy) * pt2 / self.cam_fy
         cloud = np.concatenate((pt0, pt1, pt2), axis=1)
@@ -169,7 +175,7 @@ class PoseDataset(data.Dataset):
                self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
                torch.from_numpy(target.astype(np.float32)), \
                torch.from_numpy(model_points.astype(np.float32)), \
-               torch.LongTensor([object_id])
+               torch.LongTensor([int(object_id) - 1])
 
     def __len__(self):
         return self.length

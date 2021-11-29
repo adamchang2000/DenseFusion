@@ -14,6 +14,7 @@ from knn_cuda import KNN
 
 #pred_r : batch_size * n * 4 -> batch_size * n * 6
 def loss_calculation(pred_r, pred_t, pred_c, target, model_points, idx, points, w, refine, num_point_mesh, sym_list):
+
     knn = KNN(k=1, transpose_mode=True)
     bs, num_p, _ = pred_c.size()
 
