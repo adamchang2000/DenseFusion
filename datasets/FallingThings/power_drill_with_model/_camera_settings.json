@@ -1,0 +1,38 @@
+{
+	"camera_settings": [
+		{
+			"name": "left",
+			"horizontal_fov": 64,
+			"intrinsic_settings":
+			{
+				"fx": 768.16058349609375,
+				"fy": 768.16058349609375,
+				"cx": 480,
+				"cy": 270,
+				"s": 0
+			},
+			"captured_image_size":
+			{
+				"width": 960,
+				"height": 540
+			}
+		},
+		{
+			"name": "right",
+			"horizontal_fov": 64,
+			"intrinsic_settings":
+			{
+				"fx": 768.16058349609375,
+				"fy": 768.16058349609375,
+				"cx": 480,
+				"cy": 270,
+				"s": 0
+			},
+			"captured_image_size":
+			{
+				"width": 960,
+				"height": 540
+			}
+		}
+	]
+}
