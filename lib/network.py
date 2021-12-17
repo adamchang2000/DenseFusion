@@ -117,6 +117,7 @@ class PoseNet(nn.Module):
         self.num_obj = num_obj
 
     def forward(self, img, x, choose, obj):
+
         out_img = self.cnn(img)
         
         bs, di, _, _ = out_img.size()
@@ -146,15 +147,22 @@ class PoseNet(nn.Module):
         rx = self.conv4_r(rx).view(bs, self.num_obj, 6, self.num_points)
         tx = self.conv4_t(tx).view(bs, self.num_obj, 3, self.num_points)
         cx = torch.sigmoid(self.conv4_c(cx)).view(bs, self.num_obj, 1, self.num_points)
-        
-        b = 0
-        out_rx = torch.index_select(rx[b], 0, obj[b])
-        out_tx = torch.index_select(tx[b], 0, obj[b])
-        out_cx = torch.index_select(cx[b], 0, obj[b])
+
+        #FOR NOW we just hack since we only have 1 obj
+        #out_rx = torch.gather(rx, 1, obj)
+        #out_tx = torch.gather(tx, 1, obj) 
+        #out_cx = torch.gather(cx, 1, obj)
+
+        out_rx = rx[:,0,:,:]
+        out_tx = tx[:,0,:,:]
+        out_cx = cx[:,0,:,:]
+    
         
         out_rx = out_rx.contiguous().transpose(2, 1).contiguous()
         out_cx = out_cx.contiguous().transpose(2, 1).contiguous()
         out_tx = out_tx.contiguous().transpose(2, 1).contiguous()
+
+        print("shapes a", out_rx.shape, out_tx.shape)
         
         return out_rx, out_tx, out_cx, emb.detach()
  
@@ -223,11 +231,16 @@ class PoseRefineNet(nn.Module):
         rx = F.relu(self.conv2_r(rx))
         tx = F.relu(self.conv2_t(tx))
 
-        rx = self.conv3_r(rx).view(bs, self.num_obj, 6)
-        tx = self.conv3_t(tx).view(bs, self.num_obj, 3)
+        rx = self.conv3_r(rx).view(bs, self.num_obj, 1, 6)
+        tx = self.conv3_t(tx).view(bs, self.num_obj, 1, 3)
 
-        b = 0
-        out_rx = torch.index_select(rx[b], 0, obj[b])
-        out_tx = torch.index_select(tx[b], 0, obj[b])
+        #FOR NOW we just hack since we only have 1 obj
+        #out_rx = torch.gather(rx, 1, obj)
+        #out_tx = torch.gather(tx, 1, obj)
+
+        out_rx = rx[:,0,:,:]
+        out_tx = tx[:,0,:,:]
+
+        print("shapes!", out_rx.shape, out_tx.shape)
 
         return out_rx, out_tx

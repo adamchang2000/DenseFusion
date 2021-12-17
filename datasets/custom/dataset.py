@@ -21,9 +21,44 @@ import yaml
 import cv2
 import open3d as o3d
 
+def standardize_image_size(target_image_size, rmin, rmax, cmin, cmax, image_height, image_width):
+    height, width = rmax - rmin, cmax - cmin
+
+    if height > target_image_size:
+        diff = height - target_image_size
+        rmin += int(diff / 2)
+        rmax -= int((diff + 1) / 2)
+    
+    elif height < target_image_size:
+        diff = target_image_size - height
+        if rmin - int(diff / 2) < 0:
+            rmax += diff
+        elif rmax + int((diff + 1) / 2) >= image_height:
+            rmin -= diff
+        else:
+            rmin -= int(diff / 2)
+            rmax += int((diff + 1) / 2)
+    
+    if width > target_image_size:
+        diff = width - target_image_size
+        cmin += int(diff / 2)
+        cmax -= int((diff + 1) / 2)
+    
+    elif width < target_image_size:
+        diff = target_image_size - width
+        if cmin - int(diff / 2) < 0:
+            cmax += diff
+        elif cmax + int((diff + 1) / 2) >= image_width:
+            cmin -= diff
+        else:
+            cmin -= int(diff / 2)
+            cmax += int((diff + 1) / 2)
+    
+    return rmin, rmax, cmin, cmax
+    
 
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, num, add_noise, root, noise_trans, refine):
+    def __init__(self, mode, num, add_noise, root, noise_trans, refine, image_size):
         self.objlist = [1]
         self.mode = mode
 
@@ -35,6 +70,8 @@ class PoseDataset(data.Dataset):
         self.object_number = []
 
         for item in self.objlist:
+
+            print("Loading Object {0} buffer".format(item))
                            
             if self.mode == 'train':
                 input_file = open('{}/split/{}/train.txt'.format(self.root, item))
@@ -71,6 +108,8 @@ class PoseDataset(data.Dataset):
         self.num_pt_mesh_large = 500
         self.num_pt_mesh_small = 500
         self.symmetry_obj_idx = []
+
+        self.image_size = image_size
 
     def __getitem__(self, index):
         path_prefix = self.data_list[index]
@@ -112,18 +151,16 @@ class PoseDataset(data.Dataset):
 
         _, h, w = img_masked.shape
         rmin, rmax, cmin, cmax = max(0, rmin), min(h, rmax), max(0, cmin), min(w, cmax)
+        rmin, rmax, cmin, cmax = standardize_image_size(self.image_size, rmin, rmax, cmin, cmax, img.shape[1], img.shape[2])
 
         img_masked = img_masked[:, rmin:rmax, cmin:cmax]
 
-        #p_img = np.transpose(img_masked, (1, 2, 0))
-        #Image._show(Image.fromarray(p_img))
+        # p_img = np.transpose(img_masked, (1, 2, 0))
+        # Image._show(Image.fromarray(p_img))
 
 
         # the indices that is non-zero
         choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
-        if len(choose) == 0:
-            cc = torch.LongTensor([0])
-            return(cc, cc, cc, cc, cc, cc)
 
         if len(choose) > self.num:
             c_mask = np.zeros(len(choose), dtype=int)
@@ -170,9 +207,11 @@ class PoseDataset(data.Dataset):
         target = np.dot(model_points, fixed_rotation.T)#+ fixed_translation
         target = np.dot(target, real_target_rotation.T) + target_translation / 100
 
+        img_masked = self.norm(torch.from_numpy(img_masked.astype(np.float32)))
+
         return torch.from_numpy(cloud.astype(np.float32)), \
                torch.LongTensor(choose.astype(np.int32)), \
-               self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
+               img_masked, \
                torch.from_numpy(target.astype(np.float32)), \
                torch.from_numpy(model_points.astype(np.float32)), \
                torch.LongTensor([int(object_id) - 1])
