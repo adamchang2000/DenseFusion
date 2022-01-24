@@ -58,9 +58,11 @@ def standardize_image_size(target_image_size, rmin, rmax, cmin, cmax, image_heig
     
 
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, num, add_noise, root, noise_trans, refine, image_size):
+    def __init__(self, mode, num, add_noise, root, noise_trans, refine, image_size, cropped):
         self.objlist = [1]
         self.mode = mode
+
+        self.cropped = cropped
 
         self.data_list = []
         self.model_list = []
@@ -83,7 +85,10 @@ class PoseDataset(data.Dataset):
                     break
                 if input_line[-1:] == '\n':
                     input_line = input_line[:-1]
-                self.data_list.append('{}/data/{}/{}'.format(self.root, item, input_line))
+                if cropped:
+                    self.data_list.append('{}/data/{}_cropped/{}_cropped/{}'.format(self.root, item, mode, input_line))
+                else:
+                    self.data_list.append('{}/data/{}/{}'.format(self.root, item, input_line))
                 self.object_number.append(item)
 
             print("Object {0} buffer loaded".format(item))
@@ -146,21 +151,24 @@ class PoseDataset(data.Dataset):
         img = np.transpose(img, (2, 0, 1))
         img_masked = img
 
-        bbox = meta["objects"][0]["bounding_box"]
-        rmin, rmax, cmin, cmax = int(bbox["top_left"][0]), int(bbox["bottom_right"][0]), int(bbox["top_left"][1]), int(bbox["bottom_right"][1])
+        if self.cropped:
+            top_left = np.load(path_prefix + ".left.cropinfo.npy")
+            top_left_row, top_left_col = top_left[0], top_left[1]
+            rmin, rmax, cmin, cmax = top_left_row, top_left_row + img.shape[1], top_left_col, top_left_col + img.shape[2]
 
-        _, h, w = img_masked.shape
-        rmin, rmax, cmin, cmax = max(0, rmin), min(h, rmax), max(0, cmin), min(w, cmax)
-        rmin, rmax, cmin, cmax = standardize_image_size(self.image_size, rmin, rmax, cmin, cmax, img.shape[1], img.shape[2])
+            choose = mask.flatten().nonzero()[0]
+        else:
+            bbox = meta["objects"][0]["bounding_box"]
+            rmin, rmax, cmin, cmax = int(bbox["top_left"][0]), int(bbox["bottom_right"][0]), int(bbox["top_left"][1]), int(bbox["bottom_right"][1])
 
-        img_masked = img_masked[:, rmin:rmax, cmin:cmax]
+            _, h, w = img_masked.shape
+            rmin, rmax, cmin, cmax = max(0, rmin), min(h, rmax), max(0, cmin), min(w, cmax)
+            rmin, rmax, cmin, cmax = standardize_image_size(self.image_size, rmin, rmax, cmin, cmax, img.shape[1], img.shape[2])
+        
+            img_masked = img_masked[:, rmin:rmax, cmin:cmax]
 
-        # p_img = np.transpose(img_masked, (1, 2, 0))
-        # Image._show(Image.fromarray(p_img))
-
-
-        # the indices that is non-zero
-        choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
+            # the indices that is non-zero
+            choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
 
         if len(choose) > self.num:
             c_mask = np.zeros(len(choose), dtype=int)
@@ -170,9 +178,14 @@ class PoseDataset(data.Dataset):
         else:
             choose = np.pad(choose, (0, self.num - len(choose)), 'wrap')
         
-        depth_masked = depth[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         xmap_masked = self.xmap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         ymap_masked = self.ymap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
+        
+        if self.cropped:
+            depth_masked = depth.flatten()[choose][:, np.newaxis].astype(np.float32)
+        else:
+            depth_masked = depth[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
+
         choose = np.array([choose])
 
         cam_scale = 1.0
