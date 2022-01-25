@@ -28,6 +28,8 @@ from lib.loss_refiner import Loss_refine
 from lib.utils import setup_logger
 from datetime import datetime
 
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -135,7 +137,7 @@ def main():
             for i, data in enumerate(dataloader, 0):
                 
                 if opt.profile:
-                    print("starting training sample", i, datetime.now())
+                    print("starting training sample {0} {1}".format(i, datetime.now()))
 
                 points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = data
                 points, choose, img, front_r, rot_bins, front_orig, t, model_points, idx = Variable(points).cuda(), \
@@ -150,12 +152,12 @@ def main():
                 pred_front, pred_rot_bins, pred_t, pred_c, emb = estimator(img, points, choose, idx)
 
                 if opt.profile:
-                    print("finished forward pass", i, datetime.now())
+                    print("finished forward pass {0} {1}".format(i, datetime.now()))
 
                 loss, new_points, new_rot_bins, new_t = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, opt.w, opt.refine_start)
 
                 if opt.profile:
-                    print("finished loss", i, datetime.now())
+                    print("finished loss {0} {1}".format(i, datetime.now()))
 
                 if opt.refine_start:
                     for ite in range(0, opt.iteration):
@@ -181,7 +183,7 @@ def main():
                         torch.save(estimator.state_dict(), '{0}/pose_model_current.pth'.format(opt.outf))
 
                 if opt.profile:
-                    print("finished training sample", i, datetime.now())
+                    print("finished training sample {0} {1}".format(i, datetime.now()))
 
         print('>>>>>>>>----------epoch {0} train finish---------<<<<<<<<'.format(epoch))
 

@@ -33,7 +33,7 @@ import open3d as o3d
 def visualize_points(model_points, front_orig, front, angle, t, label):
 
     model_points = model_points.cpu().detach().numpy()
-    front_orig = front_orig.cpu().detach().numpy()
+    front_orig = front_orig.cpu().detach().numpy().squeeze()
     front = front.cpu().detach().numpy()
     angle = angle.cpu().detach().numpy()
     t = t.cpu().detach().numpy()
@@ -79,7 +79,7 @@ def main():
     parser.add_argument('--w', default=0.015, help='regularize confidence')
     parser.add_argument('--w_rate', default=0.3, help='regularize confidence refiner decay')
 
-    parser.add_argument('--num_rot_bins', type=int, default = 36, help='number of bins discretizing the rotation around front')
+    parser.add_argument('--num_rot_bins', type=int, default = 180, help='number of bins discretizing the rotation around front')
     parser.add_argument('--num_visualized', type=int, default = 5, help='number of training samples to visualize')
     opt = parser.parse_args()
 
