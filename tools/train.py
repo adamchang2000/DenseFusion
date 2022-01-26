@@ -22,6 +22,7 @@ import torchvision.utils as vutils
 from torch.autograd import Variable
 from datasets.ycb.dataset import PoseDataset as PoseDataset_ycb
 from datasets.linemod.dataset import PoseDataset as PoseDataset_linemod
+from datasets.custom.dataset import PoseDataset as PoseDataset_custom
 from lib.network import PoseNet, PoseRefineNet
 from lib.loss import Loss
 from lib.loss_refiner import Loss_refine
@@ -70,6 +71,12 @@ def main():
         opt.outf = 'trained_models/linemod'
         opt.log_dir = 'experiments/logs/linemod'
         opt.repeat_epoch = 20
+    elif opt.dataset == 'custom':
+        opt.num_objects = 1
+        opt.num_points = 500
+        opt.outf = 'trained_models/custom'
+        opt.log_dir = 'experiments/logs/custom'
+        opt.repeat_epoch = 1
     else:
         print('Unknown dataset')
         return
@@ -88,7 +95,7 @@ def main():
         opt.decay_start = True
         opt.lr *= opt.lr_rate
         opt.w *= opt.w_rate
-        opt.batch_size = int(opt.batch_size / opt.iteration)
+        #opt.batch_size = int(opt.batch_size / opt.iteration)
         optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
     else:
         opt.refine_start = False
@@ -167,6 +174,7 @@ def main():
                 else:
                     loss.backward()
 
+<<<<<<< HEAD
                 train_loss_avg += loss.item()
                 train_count += 1
 
@@ -175,6 +183,15 @@ def main():
                     optimizer.step()
                     optimizer.zero_grad()
                     train_loss_avg = 0
+=======
+                train_dis_avg += dis.item()
+                train_count += opt.batch_size
+
+                logger.info('Train time {0} Epoch {1} Batch {2} Frame {3} Avg_dis:{4}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, int(train_count / opt.batch_size), train_count, train_dis_avg / opt.batch_size))
+                optimizer.step()
+                optimizer.zero_grad()
+                train_dis_avg = 0
+>>>>>>> 6d_rot
 
                 if train_count != 0 and train_count % 1000 == 0:
                     if opt.refine_start:
@@ -237,19 +254,29 @@ def main():
 
         if best_test < opt.refine_margin and not opt.refine_start:
             opt.refine_start = True
-            opt.batch_size = int(opt.batch_size / opt.iteration)
+            #opt.batch_size = int(opt.batch_size / opt.iteration)
             optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
 
             if opt.dataset == 'ycb':
                 dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins)
             elif opt.dataset == 'linemod':
+<<<<<<< HEAD
                 dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins)
             dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
+=======
+                dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
+            dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.workers)
+>>>>>>> 6d_rot
             if opt.dataset == 'ycb':
                 test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins)
             elif opt.dataset == 'linemod':
+<<<<<<< HEAD
                 test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins)
             testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
+=======
+                test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
+            testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=opt.batch_size, shuffle=False, num_workers=opt.workers)
+>>>>>>> 6d_rot
             
             opt.sym_list = dataset.get_sym_list()
             opt.num_points_mesh = dataset.get_num_points_mesh()
@@ -257,4 +284,5 @@ def main():
             print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the training set: {0}\nlength of the testing set: {1}\nnumber of sample points on mesh: {2}\nsymmetry object list: {3}'.format(len(dataset), len(test_dataset), opt.num_points_mesh, opt.sym_list))
 
 if __name__ == '__main__':
+    os.environ['KMP_DUPLICATE_LIB_OK']='True'
     main()

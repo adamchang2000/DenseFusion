@@ -200,10 +200,12 @@ for i, data in enumerate(testdataloader, 0):
         print('No.{0} NOT Pass! Distance: {1}'.format(i, dis))
         fw.write('No.{0} NOT Pass! Distance: {1}\n'.format(i, dis))
     num_count[idx[0].item()] += 1
+    # print('No.{0} examed'.format(idx[0].item()))
 
 for i in range(num_objects):
-    print('Object {0} success rate: {1}'.format(objlist[i], float(success_count[i]) / num_count[i]))
-    fw.write('Object {0} success rate: {1}\n'.format(objlist[i], float(success_count[i]) / num_count[i]))
+    if num_count[i] != 0:
+        print('Object {0} success rate: {1}'.format(objlist[i], float(success_count[i]) / num_count[i]))
+        fw.write('Object {0} success rate: {1}\n'.format(objlist[i], float(success_count[i]) / num_count[i]))
 print('ALL success rate: {0}'.format(float(sum(success_count)) / sum(num_count)))
 fw.write('ALL success rate: {0}\n'.format(float(sum(success_count)) / sum(num_count)))
 fw.close()
