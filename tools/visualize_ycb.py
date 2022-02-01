@@ -101,7 +101,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default = 'ycb', help='ycb or linemod')
     parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir (''YCB_Video_Dataset'' or ''Linemod_preprocessed'')')
-    parser.add_argument('--workers', type=int, default = 10, help='number of data loading workers')
+    parser.add_argument('--workers', type=int, default = 2, help='number of data loading workers')
     parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
     parser.add_argument('--model', type=str, default = '',  help='PoseNet model')
     parser.add_argument('--refine_model', type=str, default = '',  help='PoseRefineNet model')

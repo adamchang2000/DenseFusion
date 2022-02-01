@@ -15,14 +15,50 @@ import scipy.misc
 import scipy.io as scio
 from datetime import datetime
 
+def standardize_image_size(target_image_size, rmin, rmax, cmin, cmax, image_height, image_width):
+    height, width = rmax - rmin, cmax - cmin
+
+    if height > target_image_size:
+        diff = height - target_image_size
+        rmin += int(diff / 2)
+        rmax -= int((diff + 1) / 2)
+    
+    elif height < target_image_size:
+        diff = target_image_size - height
+        if rmin - int(diff / 2) < 0:
+            rmax += diff
+        elif rmax + int((diff + 1) / 2) >= image_height:
+            rmin -= diff
+        else:
+            rmin -= int(diff / 2)
+            rmax += int((diff + 1) / 2)
+    
+    if width > target_image_size:
+        diff = width - target_image_size
+        cmin += int(diff / 2)
+        cmax -= int((diff + 1) / 2)
+    
+    elif width < target_image_size:
+        diff = target_image_size - width
+        if cmin - int(diff / 2) < 0:
+            cmax += diff
+        elif cmax + int((diff + 1) / 2) >= image_width:
+            cmin -= diff
+        else:
+            cmin -= int(diff / 2)
+            cmax += int((diff + 1) / 2)
+    
+    return rmin, rmax, cmin, cmax
+
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, num_rot_bins, perform_profiling=False):
+    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, num_rot_bins, image_size, perform_profiling=False):
         if mode == 'train':
             self.path = 'datasets/ycb/dataset_config/train_data_list.txt'
         elif mode == 'test':
             self.path = 'datasets/ycb/dataset_config/test_data_list.txt'
         self.num_pt = num_pt
         self.root = root
+        self.image_size = image_size
 
         print("root", self.root)
 
@@ -248,21 +284,39 @@ class PoseDataset(data.Dataset):
             mask_depth = ma.getmaskarray(ma.masked_not_equal(depth, 0))
             mask_label = ma.getmaskarray(ma.masked_equal(label, obj[idx]))
             mask = mask_label * mask_depth
-            if len(mask.nonzero()[0]) > self.minimum_num_pt:
+            if len(mask.nonzero()[0]) <= self.minimum_num_pt:
+                continue
+
+            if self.add_noise:
+                img = self.trancolor(img)
+
+            img = np.array(img)
+
+            rmin, rmax, cmin, cmax = get_bbox(mask_label)
+            h, w, _= img.shape
+            rmin, rmax, cmin, cmax = max(0, rmin), min(h, rmax), max(0, cmin), min(w, cmax)
+            rmin, rmax, cmin, cmax = standardize_image_size(self.image_size, rmin, rmax, cmin, cmax, h, w)
+
+            choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
+
+            if len(choose) == 0:
+                continue
+
+            if len(choose) > self.num_pt:
+                c_mask = np.zeros(len(choose), dtype=int)
+                c_mask[:self.num_pt] = 1
+                np.random.shuffle(c_mask)
+                choose = choose[c_mask.nonzero()]
+                break
+            else:
+                choose = np.pad(choose, (0, self.num_pt - len(choose)), 'wrap')
                 break
 
-        if self.perform_profiling:
-            print("finished selecting object {0} {1}".format(index, datetime.now()))
-
-        if self.add_noise:
-            img = self.trancolor(img)
-
-        rmin, rmax, cmin, cmax = get_bbox(mask_label)
 
         if self.perform_profiling:
-            print("finished get_bbox {0} {1}".format(index, datetime.now()))
+            print("finished get_bbox and selecting obj {0} {1}".format(index, datetime.now()))
 
-        img = np.transpose(np.array(img)[:, :, :3], (2, 0, 1))[:, rmin:rmax, cmin:cmax]
+        img = np.transpose(img[:, :, :3], (2, 0, 1))[:, rmin:rmax, cmin:cmax]
 
         if self.list[index][:8] == 'data_syn':
             seed = random.choice(self.real)
@@ -351,17 +405,6 @@ class PoseDataset(data.Dataset):
         if self.perform_profiling:
             print("finished my rotation stuff {0} {1}".format(index, datetime.now()))
 
-        choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
-        if len(choose) > self.num_pt:
-            c_mask = np.zeros(len(choose), dtype=int)
-            c_mask[:self.num_pt] = 1
-            np.random.shuffle(c_mask)
-            choose = choose[c_mask.nonzero()]
-        else:
-            choose = np.pad(choose, (0, self.num_pt - len(choose)), 'wrap')
-
-        if self.perform_profiling:
-            print("finished sampling points from roi {0} {1}".format(index, datetime.now()))
         
         depth_masked = depth[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         xmap_masked = self.xmap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
@@ -381,12 +424,18 @@ class PoseDataset(data.Dataset):
         #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
         # fw.close()
 
-        dellist = [j for j in range(0, len(self.cld[obj[idx]]))]
+        if self.perform_profiling:
+            print("finished projecting depth {0} {1}".format(index, datetime.now()))
+
+        model_points = self.cld[obj[idx]]
         if self.refine:
-            dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_large)
+            select_list = np.random.choice(len(model_points), self.num_pt_mesh_large, replace=False) # without replacement, so that it won't choice duplicate points
         else:
-            dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_small)
-        model_points = np.delete(self.cld[obj[idx]], dellist, axis=0)
+            select_list = np.random.choice(len(model_points), self.num_pt_mesh_small, replace=False) # without replacement, so that it won't choice duplicate points
+        model_points = model_points[select_list]
+
+        if self.perform_profiling:
+            print("finished sampling points from roi {0} {1}".format(index, datetime.now()))
 
         if self.perform_profiling:
             print("finished computations {0} {1}".format(index, datetime.now()))

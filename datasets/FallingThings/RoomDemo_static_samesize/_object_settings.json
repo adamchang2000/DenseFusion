@@ -1,0 +1,19 @@
+{
+	"exported_object_classes": [
+		"c-1-968318-1-a"
+	],
+	"exported_objects": [
+		{
+			"class": "c-1-968318-1-a",
+			"segmentation_class_id": 12,
+			"segmentation_instance_id": 0,
+			"fixed_model_transform": [
+				[ 0, 0, 1, 0 ],
+				[ -1, 0, 0, 0 ],
+				[ 0, -1, 0, 0 ],
+				[ 0, 0, 0, 1 ]
+			],
+			"cuboid_dimensions": [ 6.2992000579833984, 3.0511999130249023, 6.3386001586914063 ]
+		}
+	]
+}

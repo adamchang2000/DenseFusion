@@ -1,0 +1,42 @@
+{
+	"camera_settings": [
+		{
+			"name": "Left Viewpoint",
+			"horizontal_fov": 90,
+			"intrinsic_settings":
+			{
+				"resX": 1280,
+				"resY": 720,
+				"fx": 640,
+				"fy": 640,
+				"cx": 640,
+				"cy": 360,
+				"s": 0
+			},
+			"captured_image_size":
+			{
+				"width": 1280,
+				"height": 720
+			}
+		},
+		{
+			"name": "Right Viewpoint",
+			"horizontal_fov": 110,
+			"intrinsic_settings":
+			{
+				"resX": 1280,
+				"resY": 720,
+				"fx": 674.14337158203125,
+				"fy": 674.14337158203125,
+				"cx": 640,
+				"cy": 360,
+				"s": 0
+			},
+			"captured_image_size":
+			{
+				"width": 1280,
+				"height": 720
+			}
+		}
+	]
+}
