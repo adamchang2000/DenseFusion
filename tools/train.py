@@ -29,6 +29,7 @@ from lib.loss import Loss
 from lib.loss_refiner import Loss_refine
 from lib.utils import setup_logger
 
+from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default = 'ycb', help='ycb or linemod')
@@ -141,11 +142,9 @@ def main():
             estimator.train()
         optimizer.zero_grad()
 
-        step_time = time.time()
         for rep in range(opt.repeat_epoch):
-            for i, data in enumerate(dataloader, 0):
-                if time.time()-step_time > 1:
-                    logger.info('!!!!!!!!!dataloader time: {0}'.format(time.time()-step_time))
+            trange = tqdm(enumerate(dataloader), total=len(dataloader), desc="training")
+            for batch_id, data in trange:
                 start_time = time.time()
                 points, choose, img, target, model_points, idx = data
                 points, choose, img, target, model_points, idx = Variable(points).cuda(), \
@@ -154,6 +153,7 @@ def main():
                                                                  Variable(target).cuda(), \
                                                                  Variable(model_points).cuda(), \
                                                                  Variable(idx).cuda()
+                
                 pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
                 loss, dis, new_points, new_target = criterion(pred_r, pred_t, pred_c, target, model_points, idx, points, opt.w, opt.refine_start)
                 
@@ -165,22 +165,18 @@ def main():
                 else:
                     loss.backward()
 
-                train_dis_avg += dis.item()
-                train_count += opt.batch_size
-
-                logger.info('Train time {0} Epoch {1} Batch {2} Frame {3} Avg_dis:{4}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, train_count / opt.batch_size, train_count, train_dis_avg))
+                dis = dis.item()
+                trange.set_postfix(dis=dis)
+                
                 optimizer.step()
                 optimizer.zero_grad()
-                train_dis_avg = 0
 
-                if train_count != 0 and train_count % 1000 == 0:
+                if batch_id != 0 and batch_id % (len(dataloader) // 4) == 0:
+                    logger.info('Epoch {} | Batch {} | dis:{}'.format(epoch, batch_id, dis))
                     if opt.refine_start:
                         torch.save(refiner.state_dict(), '{0}/pose_refine_model_current.pth'.format(opt.outf))
                     else:
                         torch.save(estimator.state_dict(), '{0}/pose_model_current.pth'.format(opt.outf))
-                if time.time()-start_time > 1:
-                    logger.info('get loss time: {0}'.format(time.time()-start_time))
-                step_time = time.time()
 
         print('>>>>>>>>----------epoch {0} train finish---------<<<<<<<<'.format(epoch))
 
@@ -192,7 +188,8 @@ def main():
         estimator.eval()
         refiner.eval()
 
-        for j, data in enumerate(testdataloader, 0):
+        trange = tqdm(enumerate(testdataloader), total=len(testdataloader), desc="testing")
+        for batch_id, data in trange:
             points, choose, img, target, model_points, idx = data
             points, choose, img, target, model_points, idx = Variable(points).cuda(), \
                                                              Variable(choose).cuda(), \
@@ -207,14 +204,13 @@ def main():
                 for ite in range(0, opt.iteration):
                     pred_r, pred_t = refiner(new_points, emb, idx)
                     dis, new_points, new_target = criterion_refine(pred_r, pred_t, new_target, model_points, idx, new_points)
-
-            test_dis += dis.item()
-            logger.info('Test time {0} Test Frame No.{1} dis:{2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), test_count, dis))
-
+            dis = dis.item()
+            test_dis += dis
+            trange.set_postfix(dis=dis)
             test_count += 1
 
         test_dis = test_dis / test_count
-        logger.info('Test time {0} Epoch {1} TEST FINISH Avg dis: {2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, test_dis))
+        logger.info('Epoch {} TEST FINISH Avg dis: {}'.format(epoch, test_dis))
         if test_dis <= best_test:
             best_test = test_dis
             if opt.refine_start:

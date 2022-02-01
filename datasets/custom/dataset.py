@@ -1,3 +1,8 @@
+from cmath import log
+from enum import unique
+from pyexpat import model
+from select import select
+from tracemalloc import start
 import torch.utils.data as data
 from PIL import Image
 import os
@@ -20,6 +25,8 @@ import scipy.io as scio
 import yaml
 import cv2
 import open3d as o3d
+
+import time
 
 def standardize_image_size(target_image_size, rmin, rmax, cmin, cmax, image_height, image_width):
     height, width = rmax - rmin, cmax - cmin
@@ -64,6 +71,16 @@ class PoseDataset(data.Dataset):
 
         self.cropped = cropped
 
+        self.num = num
+        self.add_noise = add_noise
+        self.trancolor = transforms.ColorJitter(0.2, 0.2, 0.2, 0.05)
+        self.norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        self.num_pt_mesh_large = 500
+        self.num_pt_mesh_small = 500
+        self.symmetry_obj_idx = []
+
+        self.image_size = image_size
+
         self.data_list = []
         self.model_list = []
         self.root = root
@@ -71,9 +88,18 @@ class PoseDataset(data.Dataset):
         self.refine = refine
         self.object_number = []
 
+        self.model_points_list = {}
+
+        self.p = np.array([[ 0, 0, 1],
+                      [ 1, 0, 0],
+                      [ 0,-1, 0]])
+
         for item in self.objlist:
 
             print("Loading Object {0} buffer".format(item))
+            model_path = "{}/models/{}/1_centered.obj".format(self.root, item)
+            model_points = o3d.io.read_triangle_mesh(model_path)
+            self.model_points_list[item] = np.array(model_points.vertices)
                            
             if self.mode == 'train':
                 input_file = open('{}/split/{}/train.txt'.format(self.root, item))
@@ -85,12 +111,13 @@ class PoseDataset(data.Dataset):
                     break
                 if input_line[-1:] == '\n':
                     input_line = input_line[:-1]
-                if cropped:
-                    self.data_list.append('{}/data/{}_cropped/{}_cropped/{}'.format(self.root, item, mode, input_line))
-                else:
-                    self.data_list.append('{}/data/{}/{}'.format(self.root, item, input_line))
-                self.object_number.append(item)
 
+                if cropped:
+                    path_prefix = '{}/data/{}_cropped/{}_cropped/{}'.format(self.root, item, mode, input_line) 
+                else: 
+                    path_prefix = '{}/data/{}/{}'.format(self.root, item, input_line)
+                self.data_list.append(path_prefix)
+                self.object_number.append(item)
             print("Object {0} buffer loaded".format(item))
 
         self.length = len(self.data_list)
@@ -105,28 +132,26 @@ class PoseDataset(data.Dataset):
 
         self.xmap = np.array([[j for i in range(1280)] for j in range(720)])
         self.ymap = np.array([[i for i in range(1280)] for j in range(720)])
-        
-        self.num = num
-        self.add_noise = add_noise
-        self.trancolor = transforms.ColorJitter(0.2, 0.2, 0.2, 0.05)
-        self.norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        self.num_pt_mesh_large = 500
-        self.num_pt_mesh_small = 500
-        self.symmetry_obj_idx = []
 
-        self.image_size = image_size
+
+        
 
     def __getitem__(self, index):
         path_prefix = self.data_list[index]
         object_id = self.object_number[index]
-        model_path = "{}/models/{}/1_centered.obj".format(self.root, object_id)
 
-        img = Image.open(path_prefix + ".left.png")
-
+        ### depth
         depth = np.array(Image.open(path_prefix + ".left.depth.16.png"))
+        ### label
         label = np.array(Image.open(path_prefix + ".left.cs.png"))
+        ### meta
         with open(path_prefix + ".left.json") as cam_config:
             meta = json.load(cam_config)
+        ### img 
+        img = Image.open(path_prefix + ".left.png")
+        if self.add_noise:
+            img = self.trancolor(img)
+        img = np.array(img)[:, :, :3] # remove alpha channel
 
         with open("{}/data/{}/_object_settings.json".format(self.root, object_id)) as object_config:
             object_data = json.load(object_config)
@@ -141,13 +166,8 @@ class PoseDataset(data.Dataset):
         else:
             mask_label = ma.getmaskarray(ma.masked_equal(label, np.array([255, 255, 255])))[:, :, 0]
         '''
-        
         mask = mask_label * mask_depth
-
-        if self.add_noise:
-            img = self.trancolor(img)
-
-        img = np.array(img)[:, :, :3] # remove alpha channel
+        
         img = np.transpose(img, (2, 0, 1))
         img_masked = img
 
@@ -185,7 +205,6 @@ class PoseDataset(data.Dataset):
             depth_masked = depth.flatten()[choose][:, np.newaxis].astype(np.float32)
         else:
             depth_masked = depth[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
-
         choose = np.array([choose])
 
         cam_scale = 1.0
@@ -198,19 +217,15 @@ class PoseDataset(data.Dataset):
         cloud = cloud
 
         #model_points = ply_vtx(model_path)
-        model_points = o3d.io.read_triangle_mesh(model_path)
-        model_points = np.array(model_points.vertices)
+        model_points = self.model_points_list[object_id]
 
-        dellist = [j for j in range(0, len(model_points))]
-        dellist = random.sample(dellist, len(model_points) - self.num_pt_mesh_small)
-        model_points = np.delete(model_points, dellist, axis=0)
-
+        select_list = np.random.choice(len(model_points), self.num_pt_mesh_small, replace=False) # without replacement, so that it won't choice duplicate points
+        model_points = model_points[select_list]
+        
         target_transform = np.array(meta['objects'][0]['pose_transform'])
         target_rotation = target_transform[:3, :3]
-        p = np.array([[ 0, 0, 1],
-                      [ 1, 0, 0],
-                      [ 0,-1, 0]])
-        real_target_rotation = np.matmul(target_rotation.T, p)
+        
+        real_target_rotation = np.matmul(target_rotation.T, self.p)
         target_translation = target_transform[3,:3]
 
         fixed_transform = np.array(object_data['exported_objects'][0]['fixed_model_transform'])

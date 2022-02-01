@@ -162,7 +162,7 @@ class PoseNet(nn.Module):
         out_cx = out_cx.contiguous().transpose(2, 1).contiguous()
         out_tx = out_tx.contiguous().transpose(2, 1).contiguous()
 
-        print("shapes a", out_rx.shape, out_tx.shape)
+        #print("shapes a", out_rx.shape, out_tx.shape)
         
         return out_rx, out_tx, out_cx, emb.detach()
  
@@ -241,6 +241,6 @@ class PoseRefineNet(nn.Module):
         out_rx = rx[:,0,:,:]
         out_tx = tx[:,0,:,:]
 
-        print("shapes!", out_rx.shape, out_tx.shape)
+        #print("shapes!", out_rx.shape, out_tx.shape)
 
         return out_rx, out_tx

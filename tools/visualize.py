@@ -119,7 +119,7 @@ def main():
     elif opt.dataset == 'linemod':
         test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '')
     elif opt.dataset == 'custom':
-        test_dataset = PoseDataset_custom('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', opt.image_size)
+        test_dataset = PoseDataset_custom('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', opt.image_size, True)
     testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
     
     opt.sym_list = test_dataset.get_sym_list()
