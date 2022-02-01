@@ -8,6 +8,5 @@ export CUDA_VISIBLE_DEVICES=0
 
 python ./tools/train.py --dataset ycb\
   --dataset_root ./datasets/ycb/YCB_Video_Dataset\
-  --workers 8\
-  --batch_size 32\
-  --profile
+  --workers 16\
+  --batch_size 16
