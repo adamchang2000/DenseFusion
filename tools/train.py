@@ -50,6 +50,7 @@ def main():
     parser.add_argument('--resume_posenet', type=str, default = '',  help='resume PoseNet model')
     parser.add_argument('--resume_refinenet', type=str, default = '',  help='resume PoseRefineNet model')
     parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
+    parser.add_argument('--image_size', type=int, default=300, help="square side length of cropped image")
 
     parser.add_argument('--num_rot_bins', type=int, default = 180, help='number of bins discretizing the rotation around front')
     parser.add_argument('--profile', action="store_true", default=False, help='should we performance profile?')
@@ -103,15 +104,15 @@ def main():
         optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
 
     if opt.dataset == 'ycb':
-        dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins, perform_profiling=opt.profile)
+        dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins, opt.image_size, perform_profiling=opt.profile)
     elif opt.dataset == 'linemod':
         dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins, perform_profiling=opt.profile)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.workers)
     if opt.dataset == 'ycb':
-        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins, perform_profiling=opt.profile)
+        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins, opt.image_size, perform_profiling=opt.profile)
     elif opt.dataset == 'linemod':
         test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins, perform_profiling=opt.profile)
-    testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
+    testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=opt.batch_size, shuffle=False, num_workers=opt.workers)
     
     opt.sym_list = dataset.get_sym_list()
     opt.num_points_mesh = dataset.get_num_points_mesh()
@@ -174,24 +175,13 @@ def main():
                 else:
                     loss.backward()
 
-<<<<<<< HEAD
                 train_loss_avg += loss.item()
-                train_count += 1
-
-                if train_count % opt.batch_size == 0:
-                    logger.info('Train time {0} Epoch {1} Batch {2} Frame {3} Avg_loss:{4}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, int(train_count / opt.batch_size), train_count, train_loss_avg / opt.batch_size))
-                    optimizer.step()
-                    optimizer.zero_grad()
-                    train_loss_avg = 0
-=======
-                train_dis_avg += dis.item()
                 train_count += opt.batch_size
 
-                logger.info('Train time {0} Epoch {1} Batch {2} Frame {3} Avg_dis:{4}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, int(train_count / opt.batch_size), train_count, train_dis_avg / opt.batch_size))
+                logger.info('Train time {0} Epoch {1} Batch {2} Frame {3} Avg_loss:{4}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, int(train_count / opt.batch_size), train_count, train_loss_avg))
                 optimizer.step()
                 optimizer.zero_grad()
-                train_dis_avg = 0
->>>>>>> 6d_rot
+                train_loss_avg = 0
 
                 if train_count != 0 and train_count % 1000 == 0:
                     if opt.refine_start:
@@ -237,7 +227,7 @@ def main():
             test_count += 1
 
         test_loss = test_loss / test_count
-        logger.info('Test time {0} Epoch {1} TEST FINISH Avg dis: {2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, test_loss))
+        logger.info('Test time {0} Epoch {1} TEST FINISH Avg Loss: {2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, test_loss))
         if test_loss <= best_test:
             best_test = test_loss
             if opt.refine_start:
@@ -258,25 +248,15 @@ def main():
             optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
 
             if opt.dataset == 'ycb':
-                dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins)
+                dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins, opt.image_size)
             elif opt.dataset == 'linemod':
-<<<<<<< HEAD
                 dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.num_rot_bins)
-            dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
-=======
-                dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
             dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.workers)
->>>>>>> 6d_rot
             if opt.dataset == 'ycb':
-                test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins)
+                test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins, opt.image_size)
             elif opt.dataset == 'linemod':
-<<<<<<< HEAD
                 test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.num_rot_bins)
-            testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
-=======
-                test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
             testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=opt.batch_size, shuffle=False, num_workers=opt.workers)
->>>>>>> 6d_rot
             
             opt.sym_list = dataset.get_sym_list()
             opt.num_points_mesh = dataset.get_num_points_mesh()
