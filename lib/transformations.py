@@ -1937,8 +1937,6 @@ def rotation_matrix_from_vectors_batch(vec1s, vec2s):
     a = (vec1s / numpy.expand_dims(numpy.linalg.norm(vec1s, axis=1), -1)).reshape(-1, 3)
     b = (vec2s / numpy.expand_dims(numpy.linalg.norm(vec2s, axis=1), -1)).reshape(-1, 3)
 
-    out = numpy.zeros((a.shape[0], 3, 3))
-
     v = numpy.cross(a, b)
     c = numpy.sum(a*b, axis=1)
     s = numpy.linalg.norm(v, axis=1)

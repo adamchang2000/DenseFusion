@@ -284,24 +284,37 @@ class PoseDataset(data.Dataset):
             mask_depth = ma.getmaskarray(ma.masked_not_equal(depth, 0))
             mask_label = ma.getmaskarray(ma.masked_equal(label, obj[idx]))
             mask = mask_label * mask_depth
-            if len(mask.nonzero()[0]) > self.minimum_num_pt:
+            if len(mask.nonzero()[0]) <= self.minimum_num_pt:
+                continue
+
+            if self.add_noise:
+                img = self.trancolor(img)
+
+            img = np.array(img)
+
+            rmin, rmax, cmin, cmax = get_bbox(mask_label)
+            h, w, _= img.shape
+            rmin, rmax, cmin, cmax = max(0, rmin), min(h, rmax), max(0, cmin), min(w, cmax)
+            rmin, rmax, cmin, cmax = standardize_image_size(self.image_size, rmin, rmax, cmin, cmax, h, w)
+
+            choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
+
+            if len(choose) == 0:
+                continue
+
+            if len(choose) > self.num_pt:
+                c_mask = np.zeros(len(choose), dtype=int)
+                c_mask[:self.num_pt] = 1
+                np.random.shuffle(c_mask)
+                choose = choose[c_mask.nonzero()]
+                break
+            else:
+                choose = np.pad(choose, (0, self.num_pt - len(choose)), 'wrap')
                 break
 
-        if self.perform_profiling:
-            print("finished selecting object {0} {1}".format(index, datetime.now()))
-
-        if self.add_noise:
-            img = self.trancolor(img)
-
-        img = np.array(img)
-
-        rmin, rmax, cmin, cmax = get_bbox(mask_label)
-        h, w, _= img.shape
-        rmin, rmax, cmin, cmax = max(0, rmin), min(h, rmax), max(0, cmin), min(w, cmax)
-        rmin, rmax, cmin, cmax = standardize_image_size(self.image_size, rmin, rmax, cmin, cmax, h, w)
 
         if self.perform_profiling:
-            print("finished get_bbox {0} {1}".format(index, datetime.now()))
+            print("finished get_bbox and selecting obj {0} {1}".format(index, datetime.now()))
 
         img = np.transpose(img[:, :, :3], (2, 0, 1))[:, rmin:rmax, cmin:cmax]
 
@@ -392,18 +405,6 @@ class PoseDataset(data.Dataset):
         if self.perform_profiling:
             print("finished my rotation stuff {0} {1}".format(index, datetime.now()))
 
-        choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
-
-        if len(choose) > self.num_pt:
-            c_mask = np.zeros(len(choose), dtype=int)
-            c_mask[:self.num_pt] = 1
-            np.random.shuffle(c_mask)
-            choose = choose[c_mask.nonzero()]
-        else:
-            choose = np.pad(choose, (0, self.num_pt - len(choose)), 'wrap')
-
-        if self.perform_profiling:
-            print("finished sampling points from roi {0} {1}".format(index, datetime.now()))
         
         depth_masked = depth[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         xmap_masked = self.xmap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
@@ -423,12 +424,18 @@ class PoseDataset(data.Dataset):
         #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
         # fw.close()
 
-        dellist = [j for j in range(0, len(self.cld[obj[idx]]))]
+        if self.perform_profiling:
+            print("finished projecting depth {0} {1}".format(index, datetime.now()))
+
+        model_points = self.cld[obj[idx]]
         if self.refine:
-            dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_large)
+            select_list = np.random.choice(len(model_points), self.num_pt_mesh_large, replace=False) # without replacement, so that it won't choice duplicate points
         else:
-            dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_small)
-        model_points = np.delete(self.cld[obj[idx]], dellist, axis=0)
+            select_list = np.random.choice(len(model_points), self.num_pt_mesh_small, replace=False) # without replacement, so that it won't choice duplicate points
+        model_points = model_points[select_list]
+
+        if self.perform_profiling:
+            print("finished sampling points from roi {0} {1}".format(index, datetime.now()))
 
         if self.perform_profiling:
             print("finished computations {0} {1}".format(index, datetime.now()))

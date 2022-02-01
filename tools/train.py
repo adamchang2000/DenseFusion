@@ -52,7 +52,7 @@ def main():
     parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
     parser.add_argument('--image_size', type=int, default=300, help="square side length of cropped image")
 
-    parser.add_argument('--num_rot_bins', type=int, default = 180, help='number of bins discretizing the rotation around front')
+    parser.add_argument('--num_rot_bins', type=int, default = 90, help='number of bins discretizing the rotation around front')
     parser.add_argument('--profile', action="store_true", default=False, help='should we performance profile?')
     opt = parser.parse_args()
 
@@ -175,6 +175,9 @@ def main():
                 else:
                     loss.backward()
 
+                if opt.profile:
+                    print("finished refiner steps {0} {1}".format(i, datetime.now()))
+
                 train_loss_avg += loss.item()
                 train_count += opt.batch_size
 
@@ -183,7 +186,10 @@ def main():
                 optimizer.zero_grad()
                 train_loss_avg = 0
 
-                if train_count != 0 and train_count % 1000 == 0:
+                if opt.profile:
+                    print("finished optimizer step {0} {1}".format(i, datetime.now()))
+
+                if train_count != 0 and (train_count / opt.batch_size) % 1000 == 0:
                     if opt.refine_start:
                         torch.save(refiner.state_dict(), '{0}/pose_refine_model_current.pth'.format(opt.outf))
                     else:

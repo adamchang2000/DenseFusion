@@ -29,11 +29,12 @@ def main():
     parser.add_argument('--profile', type=str, default = 'profiling.txt', help='profile file')
     args = parser.parse_args()
 
-    iter_tags = ["starting training sample", "finished forward pass", "finished loss", "finished training sample"]
-    data_tags = ["entering get item", "finished loading from disk", "finished add front aug", "finished selecting object", \
-    "finished get_bbox", "finished first img_masked", "finished second img_masked", "finished third img_masked", \
-    "finished doing densefusion's stuff", "finished my rotation stuff", "finished sampling points from roi", \
-    "finished computations"]
+    iter_tags = ["starting training sample", "finished forward pass", "finished loss", "finished refiner steps", \
+    "finished optimizer step", "finished training sample"]
+    data_tags = ["entering get item", "finished loading from disk", "finished add front aug", \
+    "finished get_bbox and selecting obj", "finished first img_masked", "finished second img_masked", \
+    "finished third img_masked", "finished doing densefusion's stuff", "finished my rotation stuff", "finished projecting depth", \
+    "finished sampling points from roi", "finished computations"]
 
     all_tags = iter_tags + data_tags
 
