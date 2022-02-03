@@ -36,6 +36,7 @@ def loss_calculation(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bin
     bs, num_p, _ = pred_c.size()
     
     #front_r -> bs * num_p * 3
+    orig_front_r = front_r
     front_r = front_r.view(bs, 1, 3).repeat(1, num_p, 1)
 
     #pred_rot_bins -> bs * num_rot_bins * num_p
@@ -65,7 +66,8 @@ def loss_calculation(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bin
     #pred_t_loss -> bs * num_p * 1
     #pred_c -> bs * num_p * 1
 
-    loss = torch.mean((pred_front_dis * front_loss_coeff + pred_rot_loss * rot_bins_loss_coeff + pred_t_loss * translation_loss_coeff) * pred_c - w * torch.log(pred_c))
+    #loss = torch.mean((pred_front_dis * front_loss_coeff + pred_rot_loss * rot_bins_loss_coeff + pred_t_loss * translation_loss_coeff) * pred_c - w * torch.log(pred_c))
+    loss = torch.mean(pred_front_dis * front_loss_coeff)
 
     #print("loss!", loss.shape)
 
@@ -91,8 +93,8 @@ def loss_calculation(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bin
 
     #we need to calculate the actual transformation that our rotation rep. represents
 
-    best_c_pred_front = torch.gather(pred_front, 1, which_max_3).squeeze()
-    best_c_rot_bins = torch.gather(pred_rot_bins, 1, which_max_rot_bins).squeeze()
+    best_c_pred_front = torch.gather(pred_front, 1, which_max_3).squeeze(1)
+    best_c_rot_bins = torch.gather(pred_rot_bins, 1, which_max_rot_bins).squeeze(1)
 
     #calculate actual rotation
     front_orig = front_orig.cpu().detach().numpy()
@@ -114,25 +116,34 @@ def loss_calculation(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bin
 
     #R_tot -> bs * 3 * 3
     #transposed since it will be right multiplied
-    R_tot = np.matmul(R_axis, Rf).transpose(0, 2, 1)
+    R_tot = np.matmul(R_axis, Rf)
 
     R_tot = torch.from_numpy(R_tot.astype(np.float32)).cuda().contiguous().view(bs, 3, 3)
     best_c_pred_t = best_c_pred_t.view(bs, 1, 3).repeat(1, num_p, 1)
 
-    #new_points -> bs * num_p * 3
-    new_points = torch.bmm((points - best_c_pred_t), R_tot).contiguous().detach()
 
     shifts = -np.argmax(best_c_rot_bins, axis=1)
     shifts = torch.from_numpy(shifts).type(torch.LongTensor).view(bs, 1).cuda()
 
     with torch.no_grad():
+
+        #new_points -> bs * num_p * 3
+        new_points = torch.bmm((points - best_c_pred_t), R_tot).contiguous()
+
         #new_rot_bins -> bs * num_rot_bins
         new_rot_bins = roll_by_gather(orig_rot_bins, 1, shifts)
 
+        #new_t -> bs * 1 * 3
         new_t = torch.unsqueeze(t[:,0,:] - best_c_pred_t[:,0,:], 1)
 
+        #new_front_orig -> bs * 3
+        new_front_orig = torch.from_numpy(best_c_pred_front).cuda()
+
+        #new_front_r -> bs * 3
+        new_front_r = orig_front_r - new_front_orig
+
     # # print('------------> ', dis[0][which_max[0]].item(), pred_c[0][which_max[0]].item(), idx[0].item())
-    return loss, new_points, new_rot_bins, new_t
+    return loss, new_points.detach(), new_rot_bins.detach(), new_t.detach(), new_front_orig.detach(), new_front_r.detach()
 
 
 class Loss(_Loss):

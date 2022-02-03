@@ -40,10 +40,10 @@ def main():
     parser.add_argument('--workers', type=int, default = 10, help='number of data loading workers')
     parser.add_argument('--lr', default=0.0001, help='learning rate')
     parser.add_argument('--lr_rate', default=0.3, help='learning rate decay rate')
-    parser.add_argument('--w', default=0.015, help='regularize confidence')
+    parser.add_argument('--w', default=0.3, help='regularize confidence')
     parser.add_argument('--w_rate', default=0.3, help='regularize confidence refiner decay')
     parser.add_argument('--decay_margin', default=0.016, help='margin to decay lr & w')
-    parser.add_argument('--refine_margin', default=0.04, help='margin to start the training of iterative refinement')
+    parser.add_argument('--refine_epoch', default=4, type=int, help='epoch to start the training of iterative refinement')
     parser.add_argument('--noise_trans', default=0.03, help='range of the random noise of translation added to the training data')
     parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
     parser.add_argument('--nepoch', type=int, default=500, help='max number of epochs to train')
@@ -62,7 +62,7 @@ def main():
 
     if opt.dataset == 'ycb':
         opt.num_objects = 21 #number of object classes in the dataset
-        opt.num_points = 1000 #number of points on the input pointcloud
+        opt.num_points = 500 #number of points on the input pointcloud
         opt.outf = 'trained_models/ycb' #folder to save trained models
         opt.log_dir = 'experiments/logs/ycb' #folder to save logs
         opt.repeat_epoch = 1 #number of repeat times for one epoch training
@@ -84,8 +84,10 @@ def main():
 
     estimator = PoseNet(num_points = opt.num_points, num_obj = opt.num_objects, num_rot_bins = opt.num_rot_bins)
     estimator.cuda()
+    estimator = nn.DataParallel(estimator)
     refiner = PoseRefineNet(num_points = opt.num_points, num_obj = opt.num_objects, num_rot_bins = opt.num_rot_bins)
     refiner.cuda()
+    refiner = nn.DataParallel(refiner)
 
     if opt.resume_posenet != '':
         estimator.load_state_dict(torch.load('{0}/{1}'.format(opt.outf, opt.resume_posenet)))
@@ -162,7 +164,7 @@ def main():
                 if opt.profile:
                     print("finished forward pass {0} {1}".format(i, datetime.now()))
 
-                loss, new_points, new_rot_bins, new_t = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, opt.w, opt.refine_start)
+                loss, new_points, new_rot_bins, new_t, new_front_orig, new_front_r = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, opt.w, opt.refine_start)
 
                 if opt.profile:
                     print("finished loss {0} {1}".format(i, datetime.now()))
@@ -170,7 +172,7 @@ def main():
                 if opt.refine_start:
                     for ite in range(0, opt.iteration):
                         pred_front, pred_rot_bins, pred_t = refiner(new_points, emb, idx)
-                        loss, new_points, new_rot_bins, new_t = criterion_refine(pred_front, pred_rot_bins, pred_t, front_r, new_rot_bins, front_orig, new_t, idx, new_points)
+                        loss, new_points, new_rot_bins, new_t, new_front_orig, new_front_r = criterion_refine(pred_front, pred_rot_bins, pred_t, new_front_r, new_rot_bins, new_front_orig, new_t, idx, new_points)
                         loss.backward()
                 else:
                     loss.backward()
@@ -242,13 +244,13 @@ def main():
                 torch.save(estimator.state_dict(), '{0}/pose_model_{1}_{2}.pth'.format(opt.outf, epoch, test_loss))
             print(epoch, '>>>>>>>>----------BEST TEST MODEL SAVED---------<<<<<<<<')
 
-        if best_test < opt.decay_margin and not opt.decay_start:
-            opt.decay_start = True
-            opt.lr *= opt.lr_rate
-            opt.w *= opt.w_rate
-            optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
+        # if best_test < opt.decay_margin and not opt.decay_start:
+        #     opt.decay_start = True
+        #     opt.lr *= opt.lr_rate
+        #     opt.w *= opt.w_rate
+        #     optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
 
-        if best_test < opt.refine_margin and not opt.refine_start:
+        if epoch >= opt.refine_epoch and not opt.refine_start:
             opt.refine_start = True
             #opt.batch_size = int(opt.batch_size / opt.iteration)
             optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)

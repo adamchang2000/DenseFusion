@@ -32,6 +32,8 @@ def loss_calculation(pred_front, pred_rot_bins, pred_t, front_r, rot_bins, front
 
     bs, _, _ = pred_front.size()
     num_input_points = len(points[0])
+
+    orig_front_r = front_r
     
     #front_r -> bs * 1 * 3
     front_r = front_r.view(bs, 1, 3)
@@ -54,7 +56,8 @@ def loss_calculation(pred_front, pred_rot_bins, pred_t, front_r, rot_bins, front
     #pred_rot_loss -> bs * 1 * 1
     #pred_t_loss -> bs * 1 * 1
 
-    loss = torch.mean(pred_front_dis * front_loss_coeff + pred_rot_loss * rot_bins_loss_coeff + pred_t_loss * translation_loss_coeff)
+    #loss = torch.mean(pred_front_dis * front_loss_coeff + pred_rot_loss * rot_bins_loss_coeff + pred_t_loss * translation_loss_coeff)
+    loss = torch.mean(pred_front_dis * front_loss_coeff)
 
     #calculating new model_points for refiner
 
@@ -80,26 +83,32 @@ def loss_calculation(pred_front, pred_rot_bins, pred_t, front_r, rot_bins, front
 
     #R_tot -> bs * 3 * 3
     #transposed since it will be right multiplied
-    R_tot = np.matmul(R_axis, Rf).transpose(0, 2, 1)
+    R_tot = np.matmul(R_axis, Rf)
 
     R_tot = torch.from_numpy(R_tot.astype(np.float32)).cuda().contiguous().view(bs, 3, 3)
     best_c_pred_t = best_c_pred_t.view(bs, 1, 3).repeat(1, num_input_points, 1)
 
-    #new_points -> bs * num_p * 3
-    new_points = torch.bmm((points - best_c_pred_t), R_tot).contiguous().detach()
 
     shifts = -np.argmax(best_c_rot_bins, axis=1)
     shifts = torch.from_numpy(shifts).type(torch.LongTensor).view(bs, 1).cuda()
 
     with torch.no_grad():
+        #new_points -> bs * num_p * 3
+        new_points = torch.bmm((points - best_c_pred_t), R_tot).contiguous()
+
         #new_rot_bins -> bs * num_rot_bins
         new_rot_bins = roll_by_gather(orig_rot_bins, 1, shifts)
 
-    with torch.no_grad():
         new_t = torch.unsqueeze(t[:,0,:] - best_c_pred_t[:,0,:], 1)
 
+        #new_front_orig -> bs * 3
+        new_front_orig = torch.from_numpy(best_c_pred_front).cuda()
+
+        #new_front_r -> bs * 3
+        new_front_r = orig_front_r - new_front_orig
+
     # # print('------------> ', dis[0][which_max[0]].item(), pred_c[0][which_max[0]].item(), idx[0].item())
-    return loss, new_points, new_rot_bins, new_t
+    return loss, new_points.detach(), new_rot_bins.detach(), new_t.detach(), new_front_orig.detach(), new_front_r.detach()
 
 
 class Loss_refine(_Loss):

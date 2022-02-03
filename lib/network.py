@@ -30,7 +30,7 @@ class ModifiedResnet(nn.Module):
         super(ModifiedResnet, self).__init__()
 
         self.model = psp_models['resnet18'.lower()]()
-        self.model = nn.DataParallel(self.model)
+        #self.model = nn.DataParallel(self.model)
 
     def forward(self, x):
         x = self.model(x)

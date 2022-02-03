@@ -290,10 +290,8 @@ class PoseDataset(data.Dataset):
             if self.add_noise:
                 img = self.trancolor(img)
 
-            img = np.array(img)
-
             rmin, rmax, cmin, cmax = get_bbox(mask_label)
-            h, w, _= img.shape
+            h, w, _= np.array(img).shape
             rmin, rmax, cmin, cmax = max(0, rmin), min(h, rmax), max(0, cmin), min(w, cmax)
             rmin, rmax, cmin, cmax = standardize_image_size(self.image_size, rmin, rmax, cmin, cmax, h, w)
 
@@ -312,6 +310,7 @@ class PoseDataset(data.Dataset):
                 choose = np.pad(choose, (0, self.num_pt - len(choose)), 'wrap')
                 break
 
+        img = np.array(img)
 
         if self.perform_profiling:
             print("finished get_bbox and selecting obj {0} {1}".format(index, datetime.now()))

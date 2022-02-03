@@ -97,6 +97,25 @@ def visualize_pointcloud(points, label):
 
     o3d.io.write_point_cloud(label + ".ply", pcld)
 
+def visualize_fronts(fronts, t, label):
+    fronts = fronts.cpu().detach().numpy()
+    fronts = fronts.reshape((-1, 3))
+
+    t = t.cpu().detach().numpy()
+    t = t.reshape((-1, 3))
+
+    front_points = fronts + t
+
+    print(front_points.shape)
+
+    front_pcld = o3d.geometry.PointCloud()
+    front_points = o3d.utility.Vector3dVector(front_points)
+
+    front_pcld.points = front_points
+
+    o3d.io.write_point_cloud(label + ".ply", front_pcld)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default = 'ycb', help='ycb or linemod')
@@ -108,8 +127,9 @@ def main():
     parser.add_argument('--w', default=0.015, help='regularize confidence')
     parser.add_argument('--w_rate', default=0.3, help='regularize confidence refiner decay')
 
-    parser.add_argument('--num_rot_bins', type=int, default = 180, help='number of bins discretizing the rotation around front')
+    parser.add_argument('--num_rot_bins', type=int, default = 90, help='number of bins discretizing the rotation around front')
     parser.add_argument('--num_visualized', type=int, default = 5, help='number of training samples to visualize')
+    parser.add_argument('--image_size', type=int, default=300, help="square side length of cropped image")
     opt = parser.parse_args()
 
     opt.manualSeed = random.randint(1, 10000)
@@ -132,11 +152,13 @@ def main():
     if opt.model != '':
         estimator = PoseNet(num_points = opt.num_points, num_obj = opt.num_objects, num_rot_bins = opt.num_rot_bins)
         estimator.cuda()
+        estimator = nn.DataParallel(estimator)
         estimator.load_state_dict(torch.load('{0}/{1}'.format(opt.outf, opt.model)))
 
     if opt.refine_model != '':
         refiner = PoseRefineNet(num_points = opt.num_points, num_obj = opt.num_objects, num_rot_bins = opt.num_rot_bins)
         refiner.cuda()
+        refiner = nn.DataParallel(refiner)
         refiner.load_state_dict(torch.load('{0}/{1}'.format(opt.outf, opt.refine_model)))
 
         #matching train
@@ -146,9 +168,9 @@ def main():
         raise Exception("this is visualizer code, pls pass in a model lol")
 
     if opt.dataset == 'ycb':
-        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', opt.num_rot_bins)
-    elif opt.dataset == 'linemod':
-        test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', opt.num_rot_bins)
+        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', opt.num_rot_bins, opt.image_size)
+    else:
+        exit("only ycb supported here")
     testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
     
     opt.sym_list = test_dataset.get_sym_list()
@@ -178,18 +200,38 @@ def main():
                                                             Variable(model_points).cuda(), \
                                                             Variable(idx).cuda()
         pred_front, pred_rot_bins, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-        loss, new_points, new_rot_bins, new_t = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, opt.w, opt.refine_model != "")
-
-        print("here!", pred_front.shape, pred_rot_bins.shape, pred_t.shape, pred_c.shape)
+        loss, new_points, new_rot_bins, new_t, new_front_orig, new_front_r = criterion(pred_front, pred_rot_bins, pred_t, pred_c, front_r, rot_bins, front_orig, t, idx, model_points, points, opt.w, opt.refine_model != "")
 
         bs, num_p, _ = pred_c.shape
 
         pred_c = pred_c.view(bs, num_p)
         how_max, which_max = torch.max(pred_c, 1)
 
-        my_front = pred_front.view(bs * num_p, 3)[which_max[0]]
-        my_theta = torch.argmax(pred_rot_bins.view(bs*num_p, opt.num_rot_bins)[which_max[0]]) / opt.num_rot_bins * 2 * np.pi
-        my_t = (pred_t.contiguous().view(bs*num_p, 1, 3)[which_max[0]] + points.contiguous().view(bs * num_p, 1, 3)[which_max[0]]).squeeze()
+        visualize_fronts(front_r, t, "{0}_gt_front".format(i))
+        visualize_fronts(pred_front, t, "{0}_pred_fronts_estimator".format(i))
+
+        #which_max -> bs
+        #pred_t -> bs * num_p * 3
+        #points -> bs * num_p * 3
+
+        which_max_3 = which_max.view(bs, 1, 1).repeat(1, 1, 3)
+        which_max_rot_bins = which_max.view(bs, 1, 1).repeat(1, 1, opt.num_rot_bins)
+
+        #best_c_pred_t -> bs * 1 * 3
+        best_c_pred_t = torch.gather(pred_t, 1, which_max_3) + torch.gather(points, 1, which_max_3)
+
+        #we need to calculate the actual transformation that our rotation rep. represents
+
+        best_c_pred_front = torch.gather(pred_front, 1, which_max_3).squeeze(1)
+        best_c_rot_bins = torch.gather(pred_rot_bins, 1, which_max_rot_bins).squeeze(1)
+
+        #get the angle in radians based on highest histogram bin
+        #angle -> bs * 1
+        angle = (torch.argmax(best_c_rot_bins, axis=1) / best_c_rot_bins.shape[1] * 2 * np.pi).unsqueeze(-1)
+
+        my_front = best_c_pred_front.squeeze()
+        my_theta = angle.squeeze()
+        my_t = best_c_pred_t.squeeze()
 
         gt_front = front_r.squeeze()
         gt_theta = torch.argmax(rot_bins) / opt.num_rot_bins * 2 * np.pi
@@ -203,24 +245,26 @@ def main():
             for ite in range(0, opt.iteration):
                 pred_front, pred_rot_bins, pred_t = refiner(new_points, emb, idx)
                 print("here1", pred_front.shape, pred_rot_bins.shape, pred_t.shape)
-                loss, new_points, new_rot_bins, new_t = criterion_refine(pred_front, pred_rot_bins, pred_t, front_r, new_rot_bins, front_orig, new_t, idx, new_points)
+                loss, new_points, new_rot_bins, new_t, new_front_orig, new_front_r = criterion_refine(pred_front, pred_rot_bins, pred_t, new_front_r, new_rot_bins, new_front_orig, new_t, idx, new_points)
 
 
-        pts_gt = get_points(model_points, front_orig, gt_front, gt_theta, gt_t)
-        pts_pred = get_points(model_points, front_orig, my_front, my_theta, my_t)
+        visualize_fronts(my_front, my_t, "{0}_selected_pred_front".format(i))
 
-        dist = dist2(pts_gt, pts_pred)
-        dists.append(np.mean(np.min(dist, axis=1)))
+        #pts_gt = get_points(model_points, front_orig, gt_front, gt_theta, gt_t)
+        #pts_pred = get_points(model_points, front_orig, my_front, my_theta, my_t)
 
-        # visualize_points(model_points, front_orig, gt_front, gt_theta, gt_t, "{0}_gt".format(i))
-        # visualize_points(model_points, front_orig, my_front, my_theta, my_t, "{0}_pred".format(i))
-        # visualize_pointcloud(points, "{0}_projected_depth".format(i))
+        #dist = dist2(pts_gt, pts_pred)
+        #dists.append(np.mean(np.min(dist, axis=1)))
 
-        # if i >= opt.num_visualized:
-        #     print("finished visualizing!")
-        #     exit()
+        visualize_points(model_points, front_orig, gt_front, gt_theta, gt_t, "{0}_gt".format(i))
+        visualize_points(model_points, front_orig, my_front, my_theta, my_t, "{0}_pred".format(i))
+        visualize_pointcloud(points, "{0}_projected_depth".format(i))
 
-    print(np.mean(dists))
+        if i >= opt.num_visualized:
+            print("finished visualizing!")
+            exit()
+
+    #print(np.mean(dists))
 
 
 if __name__ == '__main__':
