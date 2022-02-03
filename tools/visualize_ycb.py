@@ -244,7 +244,12 @@ def main():
         if opt.refine_model != "":
             for ite in range(0, opt.iteration):
                 pred_front, pred_rot_bins, pred_t = refiner(new_points, emb, idx)
-                print("here1", pred_front.shape, pred_rot_bins.shape, pred_t.shape)
+
+                my_front += pred_front.squeeze()
+                angle = (torch.argmax(pred_rot_bins, axis=1) / pred_rot_bins.shape[1] * 2 * np.pi).unsqueeze(-1)
+                my_theta += angle.squeeze()
+                my_t += pred_t.squeeze()
+
                 loss, new_points, new_rot_bins, new_t, new_front_orig, new_front_r = criterion_refine(pred_front, pred_rot_bins, pred_t, new_front_r, new_rot_bins, new_front_orig, new_t, idx, new_points)
 
 

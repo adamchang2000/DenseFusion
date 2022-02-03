@@ -79,9 +79,10 @@ class PoseDataset(data.Dataset):
                 input_line = input_line[:-1]
             if input_line[:5] == 'data/':
                 self.real.append(input_line)
+                self.list.append(input_line)
             else:
                 self.syn.append(input_line)
-            self.list.append(input_line)
+            #self.list.append(input_line)
         input_file.close()
 
         self.length = len(self.list)
