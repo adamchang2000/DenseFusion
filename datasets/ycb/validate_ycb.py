@@ -24,12 +24,24 @@ from pathlib import Path
 
 import open3d as o3d
 
+CUSTOM_DATASET = True
+
 idx = 0 # ycb might have multiple in one data. Here we only validate the first object each data
 
-cam_cx = 312.9869
-cam_cy = 241.3109
-cam_fx = 1066.778
-cam_fy = 1067.487
+
+### our custom dataset intrinsic matrix
+if CUSTOM_DATASET:
+    cam_fx = 640
+    cam_fy = 640
+    cam_cx = 640
+    cam_cy = 360
+else:
+### ycb intrinsic matrix
+    cam_cx = 312.9869
+    cam_cy = 241.3109
+    cam_fx = 1066.778
+    cam_fy = 1067.487
+
 
 def load_model_points_from_xyz(model_path):
 
@@ -56,8 +68,9 @@ if __name__ == '__main__':
 
     img_width = label.shape[0]
     img_length = label.shape[1]
+    print("Image shape (img_width, img_length): ", img_width, img_length)
 
-    xmap =np.array([[j for i in range(img_length)] for j in range(img_width)])
+    xmap = np.array([[j for i in range(img_length)] for j in range(img_width)])
     ymap = np.array([[i for i in range(img_length)] for j in range(img_width)])
 
 
@@ -72,14 +85,17 @@ if __name__ == '__main__':
     ymap_masked = ymap.flatten()[choose][:, np.newaxis].astype(np.float32)
 
     cam_scale = meta['factor_depth'][0][0]
-    pt2 = depth_masked / cam_scale
+    pt2 = depth_masked / cam_scale 
+    if CUSTOM_DATASET:
+        pt2 = pt2 / 65535.0 * 10
     pt0 = (ymap_masked - cam_cx) * pt2 / cam_fx
     pt1 = (xmap_masked - cam_cy) * pt2 / cam_fy
-    points_projected_from_depteh_image = np.concatenate((pt0, pt1, pt2), axis=1)
+    points_projected_from_depth_image = np.concatenate((pt0, pt1, pt2), axis=1)
+    print("Points projected from depth: ", points_projected_from_depth_image.shape)
 
     FOR = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0,0,0])
     pcld_projected_from_depteh_image = o3d.geometry.PointCloud()
-    pcld_projected_from_depteh_image.points = o3d.utility.Vector3dVector(points_projected_from_depteh_image)
+    pcld_projected_from_depteh_image.points = o3d.utility.Vector3dVector(points_projected_from_depth_image)
 
     
     ### read the model at origin
@@ -88,6 +104,7 @@ if __name__ == '__main__':
         model_at_origin = np.array(model_at_origin.vertices)
     else:
         model_at_origin = load_model_points_from_xyz(model_path)
+    print("Model at origin: ", model_at_origin.shape)
 
     model_at_origin_pcld = o3d.geometry.PointCloud()
     model_at_origin_pcld.points = o3d.utility.Vector3dVector(model_at_origin)
@@ -96,9 +113,11 @@ if __name__ == '__main__':
     ### apply ground truth rotation and translation on model at origin
     target_r = meta['poses'][:, :, idx][:, 0:3]
     target_t = np.array([meta['poses'][:, :, idx][:, 3:4].flatten()])
+    print("Rotation shape {} | Translation shape {}".format(target_r.shape, target_t.shape))
 
     target = np.dot(model_at_origin, target_r.T)
     target = np.add(target, target_t)
+    print("Model applied ground truth pose: ", target.shape)
 
     model_applied_gt_pose_pcld = o3d.geometry.PointCloud()
     model_applied_gt_pose_pcld.points = o3d.utility.Vector3dVector(target)
