@@ -86,8 +86,6 @@ if __name__ == '__main__':
 
     cam_scale = meta['factor_depth'][0][0]
     pt2 = depth_masked / cam_scale 
-    if CUSTOM_DATASET:
-        pt2 = pt2 / 65535.0 * 10
     pt0 = (ymap_masked - cam_cx) * pt2 / cam_fx
     pt1 = (xmap_masked - cam_cy) * pt2 / cam_fy
     points_projected_from_depth_image = np.concatenate((pt0, pt1, pt2), axis=1)
