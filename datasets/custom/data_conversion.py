@@ -12,7 +12,7 @@ p = np.array([[ 0, 0, 1],
     [ 0,-1, 0]])
 
 
-def convert_data(root_dir = "custom_dataset/", destination_dir = "converted_custom_data/", data_paths = ["Simon"]):
+def convert_data(root_dir = "custom_dataset/", destination_dir = "converted_custom_data/", data_paths = []):
     dictionary = {}
     dictionary["factor_depth"] = 65535.0 / 10
 
@@ -47,8 +47,6 @@ def convert_data(root_dir = "custom_dataset/", destination_dir = "converted_cust
 
                     relative_rotation = np.array(data["objects"][0]["pose_transform"])[:3, :3]
                     absolute_translation = np.array(data["objects"][0]["pose_transform"]).T[:3, -1:] / 100
-                    #absolute_rotation = relative_rotation #np.dot(relative_rotation, initial_rotation)
-                    #absolute_rotation = (initial_rotation.T @ (relative_rotation.T @ p).T).T
                     absolute_rotation = relative_rotation.T @ p @ initial_rotation.T
                     poses = np.concatenate((absolute_rotation, absolute_translation), axis = 1)
                     poses = poses[..., None]
