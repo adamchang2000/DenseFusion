@@ -7,8 +7,12 @@ import json
 from PIL import Image
 import shutil
 
+p = np.array([[ 0, 0, 1],
+    [ 1, 0, 0],
+    [ 0,-1, 0]])
 
-def convert_data(root_dir = "custom_data/", destination_dir = "converted_custom_data", data_paths = []):
+
+def convert_data(root_dir = "custom_dataset/", destination_dir = "converted_custom_data/", data_paths = ["Simon"]):
     dictionary = {}
     dictionary["factor_depth"] = 65535.0 / 10
 
@@ -16,7 +20,7 @@ def convert_data(root_dir = "custom_data/", destination_dir = "converted_custom_
         os.makedirs(os.path.join(destination_dir, folder), exist_ok = True)
         with open(root_dir + folder + "/_object_settings.json") as file:
             data = json.load(file)
-            initial_rotation = np.array(data["exported_objects"][0]["fixed_model_transform"]).T[:3, :3] / 100
+            initial_rotation = np.array(data["exported_objects"][0]["fixed_model_transform"])[:3, :3] / 100
             if type(data["exported_objects"][0]["segmentation_class_id"]) == int:
                 dictionary["cls_indexes"] = np.array([[data["exported_objects"][0]["segmentation_class_id"]]])
             elif type(data["exported_objects"][0]["segmentation_class_id"]) == list:
@@ -41,13 +45,13 @@ def convert_data(root_dir = "custom_data/", destination_dir = "converted_custom_
                     file = open(destination_dir + folder + "/" + f[:6] + "-box.txt", "w")
                     file.write(content)
 
-                    relative_rotation = np.array(data["objects"][0]["pose_transform"]).T[:3, :3]
+                    relative_rotation = np.array(data["objects"][0]["pose_transform"])[:3, :3]
                     absolute_translation = np.array(data["objects"][0]["pose_transform"]).T[:3, -1:] / 100
-                    absolute_rotation = relative_rotation #np.dot(relative_rotation, initial_rotation)
+                    #absolute_rotation = relative_rotation #np.dot(relative_rotation, initial_rotation)
+                    #absolute_rotation = (initial_rotation.T @ (relative_rotation.T @ p).T).T
+                    absolute_rotation = relative_rotation.T @ p @ initial_rotation.T
                     poses = np.concatenate((absolute_rotation, absolute_translation), axis = 1)
-                    print(poses.shape)
                     poses = poses[..., None]
-                    print(poses.shape)
                     dictionary["poses"] = poses
 
                 elif type(obj_class) == list:
