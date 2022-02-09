@@ -78,11 +78,12 @@ def clean_idxs(idx_file, item):
 def convert_data(root_dir = "custom_data/", destination_dir = "converted_custom_data/"):
     dictionary = {}
     dictionary["factor_depth"] = 65535.0 / 10
+    p = np.array([[0, 0, 1], [1, 0, 0], [0, -1, 0]])
 
     os.makedirs(os.path.join(destination_dir, "."), exist_ok = True)
     with open(root_dir + "_object_settings.json") as file:
         data = json.load(file)
-        initial_rotation = np.array(data["exported_objects"][0]["fixed_model_transform"]).T[:3, :3] / 100
+        initial_rotation = np.array(data["exported_objects"][0]["fixed_model_transform"])[:3, :3] / 100
         if type(data["exported_objects"][0]["segmentation_class_id"]) == int:
             dictionary["cls_indexes"] = np.array([[data["exported_objects"][0]["segmentation_class_id"]]])
         elif type(data["exported_objects"][0]["segmentation_class_id"]) == list:
@@ -108,9 +109,9 @@ def convert_data(root_dir = "custom_data/", destination_dir = "converted_custom_
                 file.write(content)
 
                 initial_rotation = np.array([[1, 0, 0], [0, 1, 0], [0, 0, -1]])
-                relative_rotation = np.array(data["objects"][0]["pose_transform"]).T[:3, :3]
+                relative_rotation = np.array(data["objects"][0]["pose_transform"])[:3, :3]
                 absolute_translation = np.array(data["objects"][0]["pose_transform"]).T[:3, -1:] / 100
-                absolute_rotation = np.dot(relative_rotation, initial_rotation)
+                absolute_rotation = relative_rotation.T @ p @ initial_rotation.T
                 poses = np.concatenate((absolute_rotation, absolute_translation), axis = 1)
                 print(poses.shape)
                 poses = poses[..., None]
