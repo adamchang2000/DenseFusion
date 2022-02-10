@@ -12,3 +12,4 @@ YCB_Video_toolbox
 datasets/customCAD/CAD Dataset Generator 2018U/Capture/*
 datasets/customCAD/dataset_processed/*
 datasets/custom/custom_preprocessed/data*
+*.ply

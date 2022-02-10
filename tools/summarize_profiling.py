@@ -29,7 +29,7 @@ def main():
     parser.add_argument('--profile', type=str, default = 'profiling.txt', help='profile file')
     args = parser.parse_args()
 
-    iter_tags = ["starting training sample", "finished forward pass", "finished loss", "finished refiner steps", \
+    iter_tags = ["starting training sample", "finished forward pass", "finished loss", "finished backward", \
     "finished optimizer step", "finished training sample"]
     data_tags = ["entering get item", "finished loading from disk", "finished add front aug", \
     "finished get_bbox and selecting obj", "finished first img_masked", "finished second img_masked", \
