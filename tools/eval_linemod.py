@@ -19,7 +19,6 @@ from datasets.linemod.dataset import PoseDataset as PoseDataset_linemod
 from lib.network import PoseNet, PoseRefineNet
 from lib.loss import Loss
 from lib.loss_refiner import Loss_refine
-from lib.transformations import euler_matrix, quaternion_matrix, quaternion_from_matrix
 from knn_cuda import KNN
 from PIL import Image
 import cv2

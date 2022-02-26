@@ -22,13 +22,24 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from datasets.ycb.dataset import PoseDataset
 from lib.network import PoseNet, PoseRefineNet
-from lib.transformations import euler_matrix, quaternion_matrix, quaternion_from_matrix
+import cv2
+
+try:
+    from lib.tools import compute_rotation_matrix_from_ortho6d
+except:
+    from tools import compute_rotation_matrix_from_ortho6d
+
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir')
 parser.add_argument('--model', type=str, default = '',  help='resume PoseNet model')
 parser.add_argument('--refine_model', type=str, default = '',  help='resume PoseRefineNet model')
+parser.add_argument('--output', type=str, default='visualization', help='output for point vis')
 opt = parser.parse_args()
+
+if not os.path.isdir(opt.output):
+    os.mkdir(opt.output)
 
 norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 border_list = [-1, 40, 80, 120, 160, 200, 240, 280, 320, 360, 400, 440, 480, 520, 560, 600, 640, 680]
@@ -51,191 +62,121 @@ ycb_toolbox_dir = 'YCB_Video_toolbox'
 result_wo_refine_dir = 'experiments/eval_result/ycb/Densefusion_wo_refine_result'
 result_refine_dir = 'experiments/eval_result/ycb/Densefusion_iterative_result'
 
-def get_bbox(posecnn_rois):
-    rmin = int(posecnn_rois[idx][3]) + 1
-    rmax = int(posecnn_rois[idx][5]) - 1
-    cmin = int(posecnn_rois[idx][2]) + 1
-    cmax = int(posecnn_rois[idx][4]) - 1
-    r_b = rmax - rmin
-    for tt in range(len(border_list)):
-        if r_b > border_list[tt] and r_b < border_list[tt + 1]:
-            r_b = border_list[tt + 1]
-            break
-    c_b = cmax - cmin
-    for tt in range(len(border_list)):
-        if c_b > border_list[tt] and c_b < border_list[tt + 1]:
-            c_b = border_list[tt + 1]
-            break
-    center = [int((rmin + rmax) / 2), int((cmin + cmax) / 2)]
-    rmin = center[0] - int(r_b / 2)
-    rmax = center[0] + int(r_b / 2)
-    cmin = center[1] - int(c_b / 2)
-    cmax = center[1] + int(c_b / 2)
-    if rmin < 0:
-        delt = -rmin
-        rmin = 0
-        rmax += delt
-    if cmin < 0:
-        delt = -cmin
-        cmin = 0
-        cmax += delt
-    if rmax > img_width:
-        delt = rmax - img_width
-        rmax = img_width
-        rmin -= delt
-    if cmax > img_length:
-        delt = cmax - img_length
-        cmax = img_length
-        cmin -= delt
-    return rmin, rmax, cmin, cmax
-
 estimator = PoseNet(num_points = num_points, num_obj = num_obj)
 estimator.cuda()
 estimator.load_state_dict(torch.load(opt.model))
 estimator.eval()
 
-refiner = PoseRefineNet(num_points = num_points, num_obj = num_obj)
-refiner.cuda()
-refiner.load_state_dict(torch.load(opt.refine_model))
-refiner.eval()
+if opt.refine_model != '':
+    refiner = PoseRefineNet(num_points = num_points, num_obj = num_obj)
+    refiner.cuda()
+    refiner.load_state_dict(torch.load(opt.refine_model))
+    refiner.eval()
 
-testlist = []
-input_file = open('{0}/test_data_list.txt'.format(dataset_config_dir))
-while 1:
-    input_line = input_file.readline()
-    if not input_line:
-        break
-    if input_line[-1:] == '\n':
-        input_line = input_line[:-1]
-    testlist.append(input_line)
-input_file.close()
-print(len(testlist))
+test_dataset = PoseDataset('test', num_points, False, opt.dataset_root, 0.0, opt.refine_model != '')
 
-class_file = open('{0}/classes.txt'.format(dataset_config_dir))
-class_id = 1
-cld = {}
-while 1:
-    class_input = class_file.readline()
-    if not class_input:
-        break
-    class_input = class_input[:-1]
+def get_pointcloud(model_points, t, rot_mat):
 
-    input_file = open('{0}/models/{1}/points.xyz'.format(opt.dataset_root, class_input))
-    cld[class_id] = []
-    while 1:
-        input_line = input_file.readline()
-        if not input_line:
-            break
-        input_line = input_line[:-1]
-        input_line = input_line.split(' ')
-        cld[class_id].append([float(input_line[0]), float(input_line[1]), float(input_line[2])])
-    input_file.close()
-    cld[class_id] = np.array(cld[class_id])
-    class_id += 1
+    model_points = model_points.cpu().detach().numpy()
 
-for now in range(0, 2949):
-    img = Image.open('{0}/{1}-color.png'.format(opt.dataset_root, testlist[now]))
-    depth = np.array(Image.open('{0}/{1}-depth.png'.format(opt.dataset_root, testlist[now])))
-    posecnn_meta = scio.loadmat('{0}/results_PoseCNN_RSS2018/{1}.mat'.format(ycb_toolbox_dir, '%06d' % now))
-    label = np.array(posecnn_meta['labels'])
-    posecnn_rois = np.array(posecnn_meta['rois'])
+    pts = (model_points @ rot_mat.T + t).squeeze()
 
-    lst = posecnn_rois[:, 1:2].flatten()
-    my_result_wo_refine = []
-    my_result = []
+    return pts
+
+def project_points(pts, cam_fx, cam_fy, cam_cx, cam_cy):
+    proj_mat = np.array([[cam_fx, 0, cam_cx], [0, cam_fy, cam_cy], [0, 0, 1]])
+    projected_pts = pts @ proj_mat.T
+    projected_pts /= np.expand_dims(projected_pts[:,2], -1)
+    projected_pts = projected_pts[:,:2]
+    return projected_pts
+
+colors = [(96, 60, 20), (156, 39, 6), (212, 91, 18), (243, 188, 46), (95, 84, 38)]
+
+for now in range(len(test_dataset)):
     
-    for idx in range(len(lst)):
-        itemid = lst[idx]
-        try:
-            rmin, rmax, cmin, cmax = get_bbox(posecnn_rois)
+    data_objs = test_dataset.get_all_objects(now)
 
-            mask_depth = ma.getmaskarray(ma.masked_not_equal(depth, 0))
-            mask_label = ma.getmaskarray(ma.masked_equal(label, itemid))
-            mask = mask_label * mask_depth
+    color_img_file = '{0}/{1}-color.png'.format(test_dataset.root, test_dataset.list[now])
+    color_img = cv2.imread(color_img_file)
 
-            choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
-            if len(choose) > num_points:
-                c_mask = np.zeros(len(choose), dtype=int)
-                c_mask[:num_points] = 1
-                np.random.shuffle(c_mask)
-                choose = choose[c_mask.nonzero()]
-            else:
-                choose = np.pad(choose, (0, num_points - len(choose)), 'wrap')
+    for obj_idx, data in enumerate(data_objs):
+        torch.cuda.empty_cache()
 
-            depth_masked = depth[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
-            xmap_masked = xmap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
-            ymap_masked = ymap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
-            choose = np.array([choose])
+        data, intrinsics = data
+        cam_fx, cam_fy, cam_cx, cam_cy = intrinsics
 
-            pt2 = depth_masked / cam_scale
-            pt0 = (ymap_masked - cam_cx) * pt2 / cam_fx
-            pt1 = (xmap_masked - cam_cy) * pt2 / cam_fy
-            cloud = np.concatenate((pt0, pt1, pt2), axis=1)
+        data = [torch.unsqueeze(d, 0) for d in data]
 
-            img_masked = np.array(img)[:, :, :3]
-            img_masked = np.transpose(img_masked, (2, 0, 1))
-            img_masked = img_masked[:, rmin:rmax, cmin:cmax]
+        points, choose, img, target, model_points, idx = data
+        points, choose, img, target, model_points, idx = Variable(points).cuda(), \
+                                                                 Variable(choose).cuda(), \
+                                                                 Variable(img).cuda(), \
+                                                                 Variable(target).cuda(), \
+                                                                 Variable(model_points).cuda(), \
+                                                                 Variable(idx).cuda()
 
-            cloud = torch.from_numpy(cloud.astype(np.float32))
-            choose = torch.LongTensor(choose.astype(np.int32))
-            img_masked = norm(torch.from_numpy(img_masked.astype(np.float32)))
-            index = torch.LongTensor([itemid - 1])
+        pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
 
-            cloud = Variable(cloud).cuda()
-            choose = Variable(choose).cuda()
-            img_masked = Variable(img_masked).cuda()
-            index = Variable(index).cuda()
+        bs, num_p, _ = pred_c.shape
+        pred_c = pred_c.view(bs, num_p)
+        how_max, which_max = torch.max(pred_c, 1)
+        pred_t = pred_t.view(bs * num_p, 1, 3)
 
-            cloud = cloud.view(1, num_points, 3)
-            img_masked = img_masked.view(1, 3, img_masked.size()[1], img_masked.size()[2])
+        my_r = pred_r[0][which_max[0]].view(-1).unsqueeze(0).unsqueeze(0)
 
-            pred_r, pred_t, pred_c, emb = estimator(img_masked, cloud, choose, index)
-            pred_r = pred_r / torch.norm(pred_r, dim=2).view(1, num_points, 1)
+        my_rot_mat = compute_rotation_matrix_from_ortho6d(my_r)[0].cpu().data.numpy()
 
-            pred_c = pred_c.view(bs, num_points)
-            how_max, which_max = torch.max(pred_c, 1)
-            pred_t = pred_t.view(bs * num_points, 1, 3)
-            points = cloud.view(bs * num_points, 1, 3)
+        #print('my rot mat', my_rot_mat)
 
-            my_r = pred_r[0][which_max[0]].view(-1).cpu().data.numpy()
-            my_t = (points + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
-            my_pred = np.append(my_r, my_t)
-            my_result_wo_refine.append(my_pred.tolist())
+        my_t = (points.view(bs * num_p, 1, 3) + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
 
-            for ite in range(0, iteration):
-                T = Variable(torch.from_numpy(my_t.astype(np.float32))).cuda().view(1, 3).repeat(num_points, 1).contiguous().view(1, num_points, 3)
-                my_mat = quaternion_matrix(my_r)
+        if opt.refine_model != "":
+            for ite in range(0, opt.iteration):
+                T = Variable(torch.from_numpy(my_t.astype(np.float32))).cuda().view(1, 3).repeat(num_p, 1).contiguous().view(1, num_p, 3)
+                rot_mat = my_rot_mat
+
+                #print('iter!', ite, my_rot_mat)
+
+                my_mat = np.zeros((4,4))
+                my_mat[0:3,0:3] = rot_mat
+                my_mat[3, 3] = 1
+
+                #print(my_mat, my_mat.shape)
+
                 R = Variable(torch.from_numpy(my_mat[:3, :3].astype(np.float32))).cuda().view(1, 3, 3)
                 my_mat[0:3, 3] = my_t
                 
-                new_cloud = torch.bmm((cloud - T), R).contiguous()
-                pred_r, pred_t = refiner(new_cloud, emb, index)
+                new_points = torch.bmm((points - T), R).contiguous()
+                pred_r, pred_t = refiner(new_points, emb, idx)
                 pred_r = pred_r.view(1, 1, -1)
                 pred_r = pred_r / (torch.norm(pred_r, dim=2).view(1, 1, 1))
-                my_r_2 = pred_r.view(-1).cpu().data.numpy()
+                my_r_2 = pred_r.view(-1).unsqueeze(0).unsqueeze(0)
                 my_t_2 = pred_t.view(-1).cpu().data.numpy()
-                my_mat_2 = quaternion_matrix(my_r_2)
+                rot_mat_2 = compute_rotation_matrix_from_ortho6d(my_r_2)[0].cpu().data.numpy()
 
+                my_mat_2 = np.zeros((4, 4))
+                my_mat_2[0:3,0:3] = rot_mat_2
+                my_mat_2[3,3] = 1
                 my_mat_2[0:3, 3] = my_t_2
 
                 my_mat_final = np.dot(my_mat, my_mat_2)
                 my_r_final = copy.deepcopy(my_mat_final)
-                my_r_final[0:3, 3] = 0
-                my_r_final = quaternion_from_matrix(my_r_final, True)
+                my_rot_mat[0:3,0:3] = my_r_final[0:3,0:3]
                 my_t_final = np.array([my_mat_final[0][3], my_mat_final[1][3], my_mat_final[2][3]])
 
-                my_pred = np.append(my_r_final, my_t_final)
-                my_r = my_r_final
+                #my_pred = np.append(my_r_final, my_t_final)
                 my_t = my_t_final
+        # Here 'my_pred' is the final pose estimation result after refinement ('my_r': quaternion, 'my_t': translation)
 
-            # Here 'my_pred' is the final pose estimation result after refinement ('my_r': quaternion, 'my_t': translation)
+        my_r = copy.deepcopy(my_rot_mat)
+        pred = get_pointcloud(model_points, my_t, my_r)
 
-            my_result.append(my_pred.tolist())
-        except ZeroDivisionError:
-            print("PoseCNN Detector Lost {0} at No.{1} keyframe".format(itemid, now))
-            my_result_wo_refine.append([0.0 for i in range(7)])
-            my_result.append([0.0 for i in range(7)])
+        projected_pred = project_points(pred, cam_fx, cam_fy, cam_cx, cam_cy)
 
-    scio.savemat('{0}/{1}.mat'.format(result_wo_refine_dir, '%04d' % now), {'poses':my_result_wo_refine})
-    scio.savemat('{0}/{1}.mat'.format(result_refine_dir, '%04d' % now), {'poses':my_result})
-    print("Finish No.{0} keyframe".format(now))
+        r, g, b = colors[obj_idx % len(colors)]
+
+        for (x, y) in projected_pred:
+            color_img = cv2.circle(color_img, (int(x), int(y)), radius=1, color=(b,g,r), thickness=-1)
+
+    output_filename = '{0}/{1}.png'.format(opt.output, now)
+    cv2.imwrite(output_filename, color_img)
