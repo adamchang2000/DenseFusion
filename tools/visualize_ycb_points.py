@@ -24,33 +24,6 @@ from datasets.ycb.dataset import PoseDataset
 from lib.network import PoseNet, PoseRefineNet
 import cv2
 
-from collections import defaultdict
-from knn_cuda import KNN
-
-def cal_auc(add_dis):
-        max_dis = 0.1
-        D = np.array(add_dis)
-        D[np.where(D > max_dis)] = np.inf;
-        D = np.sort(D)
-        n = len(add_dis)
-        acc = np.cumsum(np.ones((1,n)), dtype=np.float32) / n
-        aps = VOCap(D, acc)
-        return aps * 100
-
-def VOCap(rec, prec):
-    idx = np.where(rec != np.inf)
-    if len(idx[0]) == 0:
-        return 0
-    rec = rec[idx]
-    prec = prec[idx]
-    mrec = np.array([0.0]+list(rec)+[0.1])
-    mpre = np.array([0.0]+list(prec)+[prec[-1]])
-    for i in range(1, prec.shape[0]):
-        mpre[i] = max(mpre[i], mpre[i-1])
-    i = np.where(mrec[1:] != mrec[0:-1])[0] + 1
-    ap = np.sum((mrec[i] - mrec[i-1]) * mpre[i]) * 10
-    return ap
-
 try:
     from lib.tools import compute_rotation_matrix_from_ortho6d
 except:
@@ -119,9 +92,6 @@ def project_points(pts, cam_fx, cam_fy, cam_cx, cam_cy):
     return projected_pts
 
 colors = [(96, 60, 20), (156, 39, 6), (212, 91, 18), (243, 188, 46), (95, 84, 38)]
-
-adds = defaultdict(list)
-knn = KNN(k=1, transpose_mode=True)
 
 for now in range(len(test_dataset)):
     
@@ -201,22 +171,13 @@ for now in range(len(test_dataset)):
 
         my_r = copy.deepcopy(my_rot_mat)
         pred = get_pointcloud(model_points, my_t, my_r)
-        pred = torch.unsqueeze(torch.from_numpy(pred.astype(np.float32)), 0).cuda()
 
-        dists, inds = knn(target, pred)
-        dist = torch.mean(dists).detach().cpu().item()
-        idx = idx.detach().cpu().item()
+        projected_pred = project_points(pred, cam_fx, cam_fy, cam_cx, cam_cy)
 
-        print("idx, adds", idx, dist)
+        r, g, b = colors[obj_idx % len(colors)]
 
-        adds[idx].append(dist)
+        for (x, y) in projected_pred:
+            color_img = cv2.circle(color_img, (int(x), int(y)), radius=1, color=(b,g,r), thickness=-1)
 
-        for d in data:
-            del d
-
-adds_aucs = {}
-
-for idx, dists in adds.items():
-    adds_aucs[idx] = cal_auc(dists)
-
-print(adds_aucs)
+    output_filename = '{0}/{1}.png'.format(opt.output, now)
+    cv2.imwrite(output_filename, color_img)

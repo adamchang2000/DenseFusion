@@ -39,6 +39,7 @@ parser.add_argument('--w', default=0.015, help='learning rate')
 parser.add_argument('--w_rate', default=0.3, help='learning rate decay rate')
 parser.add_argument('--decay_margin', default=0.02, help='margin to decay lr & w')
 parser.add_argument('--refine_margin', default=0.02, help='margin to start the training of iterative refinement')
+parser.add_argument('--refine_epoch', default=10, help='latest epoch to start refinement')
 parser.add_argument('--noise_trans', default=0.03, help='range of the random noise of translation added to the training data')
 parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
 parser.add_argument('--nepoch', type=int, default=500, help='max number of epochs to train')
@@ -140,20 +141,22 @@ def main():
 
         for rep in range(opt.repeat_epoch):
             for i, data in enumerate(dataloader, 0):
-                points, choose, img, target, model_points, idx = data
-                points, choose, img, target, model_points, idx = Variable(points).cuda(), \
+                points, choose, img, target, target_front, model_points, front, idx = data
+                points, choose, img, target, target_front, model_points, front, idx = Variable(points).cuda(), \
                                                                  Variable(choose).cuda(), \
                                                                  Variable(img).cuda(), \
                                                                  Variable(target).cuda(), \
+                                                                 Variable(target_front).cuda(), \
                                                                  Variable(model_points).cuda(), \
+                                                                 Variable(front).cuda(), \
                                                                  Variable(idx).cuda()
                 pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-                loss, dis, new_points, new_target = criterion(pred_r, pred_t, pred_c, target, model_points, idx, points, opt.w, opt.refine_start)
+                loss, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, target, target_front, model_points, front, idx, points, opt.w, opt.refine_start)
                 
                 if opt.refine_start:
                     for ite in range(0, opt.iteration):
                         pred_r, pred_t = refiner(new_points, emb, idx)
-                        dis, new_points, new_target = criterion_refine(pred_r, pred_t, new_target, model_points, idx, new_points)
+                        dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
                         dis.backward()
                 else:
                     loss.backward()
@@ -184,20 +187,22 @@ def main():
         refiner.eval()
 
         for j, data in enumerate(testdataloader, 0):
-            points, choose, img, target, model_points, idx = data
-            points, choose, img, target, model_points, idx = Variable(points).cuda(), \
+            points, choose, img, target, target_front, model_points, front, idx = data
+            points, choose, img, target, target_front, model_points, front, idx = Variable(points).cuda(), \
                                                              Variable(choose).cuda(), \
                                                              Variable(img).cuda(), \
                                                              Variable(target).cuda(), \
+                                                             Variable(target_front).cuda(), \
                                                              Variable(model_points).cuda(), \
+                                                             Variable(front).cuda(), \
                                                              Variable(idx).cuda()
             pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-            _, dis, new_points, new_target = criterion(pred_r, pred_t, pred_c, target, model_points, idx, points, opt.w, opt.refine_start)
+            _, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, target, target_front, model_points, front, idx, points, opt.w, opt.refine_start)
 
             if opt.refine_start:
                 for ite in range(0, opt.iteration):
                     pred_r, pred_t = refiner(new_points, emb, idx)
-                    dis, new_points, new_target = criterion_refine(pred_r, pred_t, new_target, model_points, idx, new_points)
+                    dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
 
             test_dis += dis.item()
             logger.info('Test time {0} Test Frame No.{1} dis:{2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), test_count, dis))
@@ -220,7 +225,7 @@ def main():
             opt.w *= opt.w_rate
             optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
 
-        if best_test < opt.refine_margin and not opt.refine_start:
+        if (epoch >= opt.refine_epoch or best_test < opt.refine_margin) and not opt.refine_start:
             opt.refine_start = True
             opt.batch_size = int(opt.batch_size / opt.iteration)
             optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)

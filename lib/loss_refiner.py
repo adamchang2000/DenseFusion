@@ -12,8 +12,10 @@ import random
 import torch.backends.cudnn as cudnn
 from knn_cuda import KNN
 
+from lib.loss_helpers import FRONT_LOSS_COEFF
 
-def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_point_mesh, sym_list):
+
+def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, idx, points, num_point_mesh, sym_list):
     knn = KNN(k=1, transpose_mode=True)
     pred_r = pred_r.view(1, 1, -1)
     pred_t = pred_t.view(1, 1, -1)
@@ -37,12 +39,15 @@ def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_poin
     ori_base = base
     base = base.contiguous().transpose(2, 1).contiguous()
     model_points = model_points.view(bs, 1, num_point_mesh, 3).repeat(1, num_p, 1, 1).view(bs * num_p, num_point_mesh, 3)
+    front = front.view(bs, 1, 1, 3).repeat(1, num_p, 1, 1).view(bs * num_p, 1, 3)
+
     target = target.view(bs, 1, num_point_mesh, 3).repeat(1, num_p, 1, 1).view(bs * num_p, num_point_mesh, 3)
     ori_target = target
     pred_t = pred_t.contiguous().view(bs * num_p, 1, 3)
     ori_t = pred_t
 
     pred = torch.add(torch.bmm(model_points, base), pred_t)
+    pred_front = torch.add(torch.bmm(front, base), pred_t)
 
     if idx[0].item() in sym_list:
 
@@ -54,7 +59,9 @@ def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_poin
         target = target.view(bs * num_p, num_point_mesh, 3).contiguous()
         pred = pred.view(bs * num_p, num_point_mesh, 3).contiguous()
 
-    dis = torch.mean(torch.norm((pred - target), dim=2), dim=1)
+    dis_model = torch.mean(torch.norm((pred - target), dim=2), dim=1)
+    dis_front = torch.mean(torch.norm((pred - target), dim=2), dim=1)
+    dis = dis_model + FRONT_LOSS_COEFF * dis_front
 
     t = ori_t[0]
     points = points.view(1, num_input_points, 3)
@@ -67,9 +74,13 @@ def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_poin
     ori_t = t.repeat(num_point_mesh, 1).contiguous().view(1, num_point_mesh, 3)
     new_target = torch.bmm((new_target - ori_t), ori_base).contiguous()
 
+    new_target_front = target_front.view(1, 1, 3).contiguous()
+    ori_t = t.view(1, 1, 3)
+    new_target_front = torch.bmm((new_target_front - ori_t), ori_base).contiguous()
+    
     # print('------------> ', dis.item(), idx[0].item())
     del knn
-    return dis, new_points.detach(), new_target.detach()
+    return dis, new_points.detach(), new_target.detach(), new_target_front.detach()
 
 
 class Loss_refine(_Loss):
@@ -80,5 +91,5 @@ class Loss_refine(_Loss):
         self.sym_list = sym_list
 
 
-    def forward(self, pred_r, pred_t, target, model_points, idx, points):
-        return loss_calculation(pred_r, pred_t, target, model_points, idx, points, self.num_pt_mesh, self.sym_list)
+    def forward(self, pred_r, pred_t, target, target_front, model_points, front, idx, points):
+        return loss_calculation(pred_r, pred_t, target, target_front, model_points, front, idx, points, self.num_pt_mesh, self.sym_list)

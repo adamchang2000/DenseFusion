@@ -50,6 +50,9 @@ class PoseDataset(data.Dataset):
         class_file = open('datasets/ycb/dataset_config/classes.txt')
         class_id = 1
         self.cld = {}
+
+        self.frontd = {}
+
         while 1:
             class_input = class_file.readline()
             if not class_input:
@@ -64,6 +67,17 @@ class PoseDataset(data.Dataset):
                 input_line = input_line[:-1].split(' ')
                 self.cld[class_id].append([float(input_line[0]), float(input_line[1]), float(input_line[2])])
             self.cld[class_id] = np.array(self.cld[class_id])
+            input_file.close()
+
+            input_file = open('{0}/models/{1}/front.xyz'.format(self.root, class_input[:-1]))
+            self.frontd[class_id] = []
+            while 1:
+                input_line = input_file.readline()
+                if not input_line or len(input_line) <= 1:
+                    break
+                input_line = input_line.rstrip().split(' ')
+                self.frontd[class_id].append([float(input_line[0]), float(input_line[1]), float(input_line[2])])
+            self.frontd[class_id] = np.array(self.frontd[class_id])
             input_file.close()
             
             class_id += 1
@@ -201,12 +215,19 @@ class PoseDataset(data.Dataset):
         #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
         # fw.close()
 
-        dellist = [j for j in range(0, len(self.cld[obj[idx]]))]
+        # dellist = [j for j in range(0, len(self.cld[obj[idx]]))]
+        # if self.refine:
+        #     dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_large)
+        # else:
+        #     dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_small)
+        # model_points = np.delete(self.cld[obj[idx]], dellist, axis=0)
+
+        model_points = self.cld[obj[idx]]
         if self.refine:
-            dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_large)
+            select_list = np.random.choice(len(model_points), self.num_pt_mesh_large, replace=False) # without replacement, so that it won't choice duplicate points
         else:
-            dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_small)
-        model_points = np.delete(self.cld[obj[idx]], dellist, axis=0)
+            select_list = np.random.choice(len(model_points), self.num_pt_mesh_small, replace=False) # without replacement, so that it won't choice duplicate points
+        model_points = model_points[select_list]
 
         # fw = open('temp/{0}_model_points.xyz'.format(index), 'w')
         # for it in model_points:
@@ -218,6 +239,11 @@ class PoseDataset(data.Dataset):
             target = np.add(target, target_t + add_t)
         else:
             target = np.add(target, target_t)
+
+
+        #right now, we are only dealing with one "front" axis
+        front = np.expand_dims(self.frontd[obj[idx]][0], 0) * .1
+        target_front = front @ target_r.T + target_t
         
         # fw = open('temp/{0}_tar.xyz'.format(index), 'w')
         # for it in target:
@@ -228,7 +254,9 @@ class PoseDataset(data.Dataset):
                torch.LongTensor(choose.astype(np.int32)), \
                self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
                torch.from_numpy(target.astype(np.float32)), \
+               torch.from_numpy(target_front.astype(np.float32)), \
                torch.from_numpy(model_points.astype(np.float32)), \
+               torch.from_numpy(front.astype(np.float32)), \
                torch.LongTensor([int(obj[idx]) - 1])
 
     def get_all_objects(self, index):
@@ -353,12 +381,19 @@ class PoseDataset(data.Dataset):
             #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
             # fw.close()
 
-            dellist = [j for j in range(0, len(self.cld[obj[idx]]))]
+            # dellist = [j for j in range(0, len(self.cld[obj[idx]]))]
+            # if self.refine:
+            #     dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_large)
+            # else:
+            #     dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_small)
+            # model_points = np.delete(self.cld[obj[idx]], dellist, axis=0)
+
+            model_points = self.cld[obj[idx]]
             if self.refine:
-                dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_large)
+                select_list = np.random.choice(len(model_points), self.num_pt_mesh_large, replace=False) # without replacement, so that it won't choice duplicate points
             else:
-                dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_small)
-            model_points = np.delete(self.cld[obj[idx]], dellist, axis=0)
+                select_list = np.random.choice(len(model_points), self.num_pt_mesh_small, replace=False) # without replacement, so that it won't choice duplicate points
+            model_points = model_points[select_list]
 
             # fw = open('temp/{0}_model_points.xyz'.format(index), 'w')
             # for it in model_points:
@@ -370,7 +405,7 @@ class PoseDataset(data.Dataset):
                 target = np.add(target, target_t + add_t)
             else:
                 target = np.add(target, target_t)
-            
+
             # fw = open('temp/{0}_tar.xyz'.format(index), 'w')
             # for it in target:
             #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
