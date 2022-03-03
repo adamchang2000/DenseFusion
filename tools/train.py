@@ -124,6 +124,8 @@ def main():
 
     if opt.start_epoch == 1:
         for log in os.listdir(opt.log_dir):
+            if ".gitignore" in log:
+                continue
             os.remove(os.path.join(opt.log_dir, log))
     st_time = time.time()
 
@@ -156,8 +158,8 @@ def main():
                 if opt.refine_start:
                     for ite in range(0, opt.iteration):
                         pred_r, pred_t = refiner(new_points, emb, idx)
-                        dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
-                        dis.backward()
+                        loss, dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
+                        loss.backward()
                 else:
                     loss.backward()
 
@@ -202,7 +204,7 @@ def main():
             if opt.refine_start:
                 for ite in range(0, opt.iteration):
                     pred_r, pred_t = refiner(new_points, emb, idx)
-                    dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
+                    loss, dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
 
             test_dis += dis.item()
             logger.info('Test time {0} Test Frame No.{1} dis:{2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), test_count, dis))

@@ -59,9 +59,10 @@ def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, 
         target = target.view(bs * num_p, num_point_mesh, 3).contiguous()
         pred = pred.view(bs * num_p, num_point_mesh, 3).contiguous()
 
-    dis_model = torch.mean(torch.norm((pred - target), dim=2), dim=1)
+    dis = torch.mean(torch.norm((pred - target), dim=2), dim=1)
     dis_front = torch.mean(torch.norm((pred - target), dim=2), dim=1)
-    dis = dis_model + FRONT_LOSS_COEFF * dis_front
+
+    loss = dis + FRONT_LOSS_COEFF * dis_front
 
     t = ori_t[0]
     points = points.view(1, num_input_points, 3)
@@ -80,7 +81,7 @@ def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, 
     
     # print('------------> ', dis.item(), idx[0].item())
     del knn
-    return dis, new_points.detach(), new_target.detach(), new_target_front.detach()
+    return loss, dis, new_points.detach(), new_target.detach(), new_target_front.detach()
 
 
 class Loss_refine(_Loss):
