@@ -148,22 +148,19 @@ class PoseNet(nn.Module):
         tx = self.conv4_t(tx).view(bs, self.num_obj, 3, self.num_points)
         cx = torch.sigmoid(self.conv4_c(cx)).view(bs, self.num_obj, 1, self.num_points)
 
-        #FOR NOW we just hack since we only have 1 obj
-        #out_rx = torch.gather(rx, 1, obj)
-        #out_tx = torch.gather(tx, 1, obj) 
-        #out_cx = torch.gather(cx, 1, obj)
+        obj = obj.unsqueeze(-1).unsqueeze(-1)
+        obj_rx = obj.repeat(1, 1, rx.shape[2], rx.shape[3])
+        obj_tx = obj.repeat(1, 1, tx.shape[2], tx.shape[3])
+        obj_cx = obj.repeat(1, 1, cx.shape[2], cx.shape[3])
 
-        out_rx = rx[:,0,:,:]
-        out_tx = tx[:,0,:,:]
-        out_cx = cx[:,0,:,:]
-    
-        
+        out_rx = torch.gather(rx, 1, obj_rx)[:,0,:,:]
+        out_tx = torch.gather(tx, 1, obj_tx)[:,0,:,:]
+        out_cx = torch.gather(cx, 1, obj_cx)[:,0,:,:]
+
         out_rx = out_rx.contiguous().transpose(2, 1).contiguous()
-        out_cx = out_cx.contiguous().transpose(2, 1).contiguous()
         out_tx = out_tx.contiguous().transpose(2, 1).contiguous()
+        out_cx = out_cx.contiguous().transpose(2, 1).contiguous()
 
-        #print("shapes a", out_rx.shape, out_tx.shape)
-        
         return out_rx, out_tx, out_cx, emb.detach()
  
 
@@ -231,15 +228,18 @@ class PoseRefineNet(nn.Module):
         rx = F.relu(self.conv2_r(rx))
         tx = F.relu(self.conv2_t(tx))
 
-        rx = self.conv3_r(rx).view(bs, self.num_obj, 1, 6)
-        tx = self.conv3_t(tx).view(bs, self.num_obj, 1, 3)
+        rx = self.conv3_r(rx).view(bs, self.num_obj, 6, 1)
+        tx = self.conv3_t(tx).view(bs, self.num_obj, 3, 1)
 
-        #FOR NOW we just hack since we only have 1 obj
-        #out_rx = torch.gather(rx, 1, obj)
-        #out_tx = torch.gather(tx, 1, obj)
+        obj = obj.unsqueeze(-1).unsqueeze(-1)
+        obj_rx = obj.repeat(1, 1, rx.shape[2], rx.shape[3])
+        obj_tx = obj.repeat(1, 1, tx.shape[2], tx.shape[3])
 
-        out_rx = rx[:,0,:,:]
-        out_tx = tx[:,0,:,:]
+        out_rx = torch.gather(rx, 1, obj_rx)[:,0,:,:]
+        out_tx = torch.gather(tx, 1, obj_tx)[:,0,:,:]
+
+        out_rx = out_rx.contiguous().transpose(2, 1).contiguous()
+        out_tx = out_tx.contiguous().transpose(2, 1).contiguous()
 
         #print("shapes!", out_rx.shape, out_tx.shape)
 

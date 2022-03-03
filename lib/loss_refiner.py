@@ -40,7 +40,7 @@ def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_poin
     ori_base = base
     base = base.contiguous().transpose(2, 1).contiguous()
     model_points = model_points.view(bs, 1, num_point_mesh, 3).repeat(1, num_p, 1, 1).view(bs * num_p, num_point_mesh, 3)
-    target = target.view(bs, 1, num_point_mesh, 3).repeat(1, num_p, 1, 1).view(bs * num_p, num_point_mesh, 3)
+    target = target.view(bs, 1, num_point_mesh, 3).repeat(1, num_p, 1, 1).view(bs, num_p, num_point_mesh, 3)
     ori_target = target
     pred_t = pred_t.contiguous().view(bs * num_p, 1, 3)
     ori_t = pred_t
@@ -50,22 +50,29 @@ def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_poin
 
     pred = torch.add(torch.bmm(model_points, base), pred_t)
 
+    pred = pred.view(bs, num_p, num_point_mesh, 3)
+
     #print("loss shapes now before dist calc", pred.shape, target.shape)
 
-    if idx[0].item() in sym_list:
+    for i in range(len(idx)):
+        if idx[i].item() in sym_list:
 
-        target = target[0].contiguous().view(bs, -1, 3)
-        pred = pred.contiguous().view(bs, -1, 3)
+            my_target = target[i,0,:,:].contiguous().view(1, -1, 3)
+            my_pred = pred[i].contiguous().view(1, -1, 3)
 
-        dists, inds = knn(target, pred)
-        target = torch.index_select(target, 1, inds.view(-1))
+            dists, inds = knn(my_target, my_pred)
 
-        target = target.view(bs * num_p, num_point_mesh, 3).contiguous()
-        pred = pred.view(bs * num_p, num_point_mesh, 3).contiguous()
+            inds = inds.repeat(1, 1, 3)
+
+            my_target = torch.gather(my_target, 1, inds)
+
+            my_target = my_target.view(num_p, num_point_mesh, 3).contiguous()
+
+            target[i] = my_target
 
     #print("shapes before diff", pred.shape, target.shape)
 
-    dis = torch.mean(torch.norm((pred - target), dim=2), dim=1)
+    dis = torch.mean(torch.norm((pred - target), dim=3), dim=2)
 
     #print("dis shape", dis.shape)
 

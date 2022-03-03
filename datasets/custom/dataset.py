@@ -183,7 +183,7 @@ class PoseDataset(data.Dataset):
 
             _, h, w = img_masked.shape
             rmin, rmax, cmin, cmax = max(0, rmin), min(h, rmax), max(0, cmin), min(w, cmax)
-            rmin, rmax, cmin, cmax = standardize_image_size(self.image_size, rmin, rmax, cmin, cmax, img.shape[1], img.shape[2])
+            rmin, rmax, cmin, cmax = standardize_image_size(self.image_size, rmin, rmax, cmin, cmax, h, w)
         
             img_masked = img_masked[:, rmin:rmax, cmin:cmax]
 

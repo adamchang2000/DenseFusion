@@ -15,7 +15,7 @@ from knn_cuda import KNN
 #pred_r : batch_size * n * 4 -> batch_size * n * 6
 def loss_calculation(pred_r, pred_t, pred_c, target, model_points, idx, points, w, refine, num_point_mesh, sym_list):
 
-    #print("shapes loss regular", pred_r.shape, pred_t.shape, target.shape, model_points.shape, points.shape)
+    #print("shapes loss regular", pred_r.shape, pred_t.shape, pred_c.shape, target.shape, model_points.shape, points.shape)
 
     knn = KNN(k=1, transpose_mode=True)
     bs, num_p, _ = pred_c.size()
@@ -46,34 +46,29 @@ def loss_calculation(pred_r, pred_t, pred_c, target, model_points, idx, points, 
     points = points.contiguous().view(bs*num_p, 1, 3)
     pred_c = pred_c.contiguous().view(bs, num_p)
 
-
     #print("shapes before bmm?", model_points.shape, base.shape, points.shape, pred_t.shape)
 
     pred = torch.add(torch.bmm(model_points, base), points + pred_t)
 
     pred = pred.view(bs, num_p, num_point_mesh, 3)
 
-    #print("loss shapes now before dist calc", pred.shape, target.shape, pred_c.shape)
+    #print("loss shapes now before possible knn", pred.shape, target.shape)
 
+    #knn will happen in refiner loss
     if not refine:
-        if idx[0].item() in sym_list:
+        for i in range(len(idx)):
+            if idx[i].item() in sym_list:
 
-            target = target[0].contiguous().view(bs, -1, 3)
-            pred = pred.contiguous().view(bs, -1, 3)
+                my_target = target[i,0,:,:].contiguous().view(1, -1, 3)
+                my_pred = pred[i].contiguous().view(1, -1, 3)
 
-            dists, inds = knn(target, pred)
-            target = torch.index_select(target, 1, inds.view(-1))
+                dists, inds = knn(my_target, my_pred)
+                inds = inds.repeat(1, 1, 3)
+                my_target = torch.gather(my_target, 1, inds)
 
-            target = target.view(bs * num_p, num_point_mesh, 3).contiguous()
-            pred = pred.view(bs * num_p, num_point_mesh, 3).contiguous()
+                my_target = my_target.view(num_p, num_point_mesh, 3).contiguous()
 
-    x1 = pred - target
-
-    #print("raw sub", x1.shape)
-
-    x = torch.norm((pred - target), dim=3)
-
-    #print("raw norms", x.shape)
+                target[i] = my_target
 
     dis = torch.mean(torch.norm((pred - target), dim=3), dim=2)
 
@@ -117,13 +112,7 @@ def loss_calculation(pred_r, pred_t, pred_c, target, model_points, idx, points, 
     new_points = torch.bmm((points - ori_t), ori_base).contiguous()
 
     new_target = ori_target[:,0].view(bs, num_point_mesh, 3).contiguous()
-
-    #print("ori_t calc (should match new_target after this)", new_target.shape, t.shape)
-
     ori_t = t.repeat(1, num_point_mesh, 1, 1).contiguous().view(bs, num_point_mesh, 3)
-
-    #print("hrererere2", new_target.shape, ori_t.shape, ori_base.shape)
-
     new_target = torch.bmm((new_target - ori_t), ori_base).contiguous()
 
     # print('------------> ', dis[0][which_max[0]].item(), pred_c[0][which_max[0]].item(), idx[0].item())
