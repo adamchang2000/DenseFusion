@@ -41,8 +41,10 @@ def loss_calculation(pred_r, pred_t, pred_c, target, target_front, model_points,
     base = base.contiguous().transpose(2, 1).contiguous()
 
     model_points = model_points.view(bs, 1, num_point_mesh, 3).repeat(1, num_p, 1, 1).view(bs * num_p, num_point_mesh, 3)
-    front = front.view(bs, 1, 1, 3).repeat(1, num_p, 1, 1).view(bs, num_p, 1, 3)
+    front = front.view(bs, 1, 1, 3).repeat(1, num_p, 1, 1).view(bs * num_p, 1, 3)
+
     target = target.view(bs, 1, num_point_mesh, 3).repeat(1, num_p, 1, 1).view(bs, num_p, num_point_mesh, 3)
+    target_front = target_front.view(bs, 1, 1, 3).repeat(1, num_p, 1, 1)
 
     ori_target = target
     pred_t = pred_t.contiguous().view(bs*num_p, 1, 3)
@@ -50,12 +52,11 @@ def loss_calculation(pred_r, pred_t, pred_c, target, target_front, model_points,
     points = points.contiguous().view(bs*num_p, 1, 3)
     pred_c = pred_c.contiguous().view(bs, num_p)
 
-    #print("shapes before bmm?", model_points.shape, base.shape, points.shape, pred_t.shape)
-
     pred = torch.add(torch.bmm(model_points, base), points + pred_t)
     pred_front = torch.add(torch.bmm(front, base), points + pred_t)
 
     pred = pred.view(bs, num_p, num_point_mesh, 3)
+    pred_front = pred_front.view(bs, num_p, 1, 3)
 
     #print("loss shapes now before possible knn", pred.shape, target.shape)
 
@@ -103,8 +104,6 @@ def loss_calculation(pred_r, pred_t, pred_c, target, target_front, model_points,
     which_max = ori_which_max.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).repeat(1, 1, 3, 3)
 
     ori_base = torch.gather(ori_base, 1, which_max).view(bs, 3, 3).contiguous()
-
-
     ori_t = t.repeat(1, num_p, 1, 1).contiguous()
 
     #print("HERERERE", ori_t.shape, points.shape, ori_base.shape)
@@ -118,8 +117,8 @@ def loss_calculation(pred_r, pred_t, pred_c, target, target_front, model_points,
     ori_t = t.repeat(1, num_point_mesh, 1, 1).contiguous().view(bs, num_point_mesh, 3)
     new_target = torch.bmm((new_target - ori_t), ori_base).contiguous()
 
-    new_target_front = target_front.view(1, 1, 3).contiguous()
-    ori_t = t.view(1, 1, 3)
+    new_target_front = target_front[:,0].view(bs, 1, 3).contiguous()
+    ori_t = t.view(bs, 1, 3)
     new_target_front = torch.bmm((new_target_front - ori_t), ori_base).contiguous()
 
     # print('------------> ', dis[0][which_max[0]].item(), pred_c[0][which_max[0]].item(), idx[0].item())
@@ -127,7 +126,6 @@ def loss_calculation(pred_r, pred_t, pred_c, target, target_front, model_points,
     #print("outputting this thingy", dis.shape, ori_which_max.shape)
 
     which_max = ori_which_max.unsqueeze(-1)
-
     dis = torch.gather(dis, 1, which_max)
     dis = torch.mean(dis)
 

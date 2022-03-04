@@ -37,6 +37,7 @@ parser.add_argument('--model', type=str, default = '',  help='resume PoseNet mod
 parser.add_argument('--refine_model', type=str, default = '',  help='resume PoseRefineNet model')
 parser.add_argument('--output', type=str, default='visualization', help='output for point vis')
 parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
+parser.add_argument('--image_size', type=int, default=300, help="square side length of cropped image")
 opt = parser.parse_args()
 
 if not os.path.isdir(opt.output):
@@ -74,7 +75,7 @@ if opt.refine_model != '':
     refiner.load_state_dict(torch.load(opt.refine_model))
     refiner.eval()
 
-test_dataset = PoseDataset('test', num_points, False, opt.dataset_root, 0.0, opt.refine_model != '')
+test_dataset = PoseDataset('test', num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', opt.image_size)
 
 def get_pointcloud(model_points, t, rot_mat):
 

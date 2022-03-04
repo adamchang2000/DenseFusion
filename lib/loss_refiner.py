@@ -39,9 +39,10 @@ def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, 
     ori_base = base
     base = base.contiguous().transpose(2, 1).contiguous()
     model_points = model_points.view(bs, 1, num_point_mesh, 3).repeat(1, num_p, 1, 1).view(bs * num_p, num_point_mesh, 3)
-
     front = front.view(bs, 1, 1, 3).repeat(1, num_p, 1, 1).view(bs * num_p, 1, 3)
+
     target = target.view(bs, 1, num_point_mesh, 3).repeat(1, num_p, 1, 1).view(bs, num_p, num_point_mesh, 3)
+    target_front = target_front.view(bs, 1, 1, 3).repeat(1, num_p, 1, 1)
 
     ori_target = target
     pred_t = pred_t.contiguous().view(bs * num_p, 1, 3)
@@ -76,7 +77,7 @@ def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, 
     dis = torch.mean(torch.norm((pred - target), dim=3), dim=2)
     dis_front = torch.mean(torch.norm((pred_front - target_front), dim=3), dim=2)
     
-    loss = torch.sum(torch.mean(dis + FRONT_LOSS_COEFF * front_dis, dim=1))
+    loss = torch.sum(torch.mean(dis + FRONT_LOSS_COEFF * dis_front, dim=1))
 
     #print("dis shape", dis.shape)
 
@@ -95,8 +96,8 @@ def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, 
     ori_t = t.repeat(1, num_point_mesh, 1).contiguous().view(bs, num_point_mesh, 3)
     new_target = torch.bmm((new_target - ori_t), ori_base).contiguous()
 
-    new_target_front = target_front.view(1, 1, 3).contiguous()
-    ori_t = t.view(1, 1, 3)
+    new_target_front = target_front.view(bs, 1, 3).contiguous()
+    ori_t = t.view(bs, 1, 3)
     new_target_front = torch.bmm((new_target_front - ori_t), ori_base).contiguous()
  
     dis = torch.mean(dis)
