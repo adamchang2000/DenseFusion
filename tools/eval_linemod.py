@@ -19,8 +19,9 @@ from datasets.linemod.dataset import PoseDataset as PoseDataset_linemod
 from lib.network import PoseNet, PoseRefineNet
 from lib.loss import Loss
 from lib.loss_refiner import Loss_refine
-from lib.transformations import euler_matrix, quaternion_matrix, quaternion_from_matrix
 from knn_cuda import KNN
+from PIL import Image
+import cv2
 
 try:
     from lib.tools import compute_rotation_matrix_from_ortho6d
@@ -31,7 +32,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir')
 parser.add_argument('--model', type=str, default = '',  help='resume PoseNet model')
 parser.add_argument('--refine_model', type=str, default = '',  help='resume PoseRefineNet model')
+parser.add_argument('--output', type=str, default='visualization', help='output for point vis')
 opt = parser.parse_args()
+
+if not os.path.isdir(opt.output):
+    os.mkdir(opt.output)
+
 
 num_objects = 13
 objlist = [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
@@ -49,6 +55,8 @@ estimator.cuda()
 refiner = PoseRefineNet(num_points = num_points, num_obj = num_objects)
 refiner = nn.DataParallel(refiner)
 refiner.cuda()
+
+print("model?", opt.model)
 
 estimator_dict = torch.load(opt.model)
 estimator_dict_parallel = {}
@@ -68,6 +76,7 @@ estimator.eval()
 refiner.eval()
 
 testdataset = PoseDataset_linemod('eval', num_points, False, opt.dataset_root, 0.0, True)
+
 testdataloader = torch.utils.data.DataLoader(testdataset, batch_size=1, shuffle=False, num_workers=10)
 
 sym_list = testdataset.get_sym_list()
@@ -86,7 +95,17 @@ success_count = [0 for i in range(num_objects)]
 num_count = [0 for i in range(num_objects)]
 fw = open('{0}/eval_result_logs.txt'.format(output_result_dir), 'w')
 
+def project_points(pts, cam_fx, cam_fy, cam_cx, cam_cy):
+    proj_mat = np.array([[cam_fx, 0, cam_cx], [0, cam_fy, cam_cy], [0, 0, 1]])
+    projected_pts = pts @ proj_mat.T
+    projected_pts /= np.expand_dims(projected_pts[:,2], -1)
+    projected_pts = projected_pts[:,:2]
+    return projected_pts
+
 for i, data in enumerate(testdataloader, 0):
+
+    color_img_file = testdataset.list_rgb[i]
+    color_img = cv2.imread(color_img_file)
 
     points, choose, img, target, model_points, idx = data
     if len(points.size()) == 2:
@@ -157,6 +176,16 @@ for i, data in enumerate(testdataloader, 0):
     my_r = copy.deepcopy(my_rot_mat)
     pred = np.dot(model_points, my_r.T) + my_t
     target = target[0].cpu().detach().numpy()
+
+    projected_pred = project_points(pred, testdataset.cam_fx, testdataset.cam_fy, testdataset.cam_cx, testdataset.cam_cy)
+
+    for (x, y) in projected_pred:
+        color_img = cv2.circle(color_img, (int(x), int(y)), radius=1, color=(0,255,0), thickness=-1)
+
+    output_filename = '{0}/{1}.png'.format(opt.output, i)
+    cv2.imwrite(output_filename, color_img)
+
+
 
     if idx[0].item() in sym_list:
         pred = torch.from_numpy(pred.astype(np.float32)).unsqueeze(0).cuda()

@@ -12,11 +12,10 @@ import random
 import torch.backends.cudnn as cudnn
 from knn_cuda import KNN
 
+from lib.loss_helpers import FRONT_LOSS_COEFF
 
-def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_point_mesh, sym_list):
+def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, idx, points, num_point_mesh, sym_list):
 
-    #print("shapes loss refiner", pred_r.shape, pred_t.shape, target.shape, model_points.shape, points.shape)
- 
     knn = KNN(k=1, transpose_mode=True)
     bs, num_p, _ = pred_r.size()
     num_input_points = len(points[0])
@@ -40,7 +39,10 @@ def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_poin
     ori_base = base
     base = base.contiguous().transpose(2, 1).contiguous()
     model_points = model_points.view(bs, 1, num_point_mesh, 3).repeat(1, num_p, 1, 1).view(bs * num_p, num_point_mesh, 3)
+
+    front = front.view(bs, 1, 1, 3).repeat(1, num_p, 1, 1).view(bs * num_p, 1, 3)
     target = target.view(bs, 1, num_point_mesh, 3).repeat(1, num_p, 1, 1).view(bs, num_p, num_point_mesh, 3)
+
     ori_target = target
     pred_t = pred_t.contiguous().view(bs * num_p, 1, 3)
     ori_t = pred_t
@@ -49,6 +51,7 @@ def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_poin
     #print("shapes before bmm?", model_points.shape, base.shape, points.shape, pred_t.shape)
 
     pred = torch.add(torch.bmm(model_points, base), pred_t)
+    pred_front = torch.add(torch.bmm(front, base), pred_t)
 
     pred = pred.view(bs, num_p, num_point_mesh, 3)
 
@@ -65,14 +68,15 @@ def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_poin
             inds = inds.repeat(1, 1, 3)
 
             my_target = torch.gather(my_target, 1, inds)
-
             my_target = my_target.view(num_p, num_point_mesh, 3).contiguous()
-
             target[i] = my_target
 
     #print("shapes before diff", pred.shape, target.shape)
-
+    
     dis = torch.mean(torch.norm((pred - target), dim=3), dim=2)
+    dis_front = torch.mean(torch.norm((pred_front - target_front), dim=3), dim=2)
+    
+    loss = torch.sum(torch.mean(dis + FRONT_LOSS_COEFF * front_dis, dim=1))
 
     #print("dis shape", dis.shape)
 
@@ -91,11 +95,15 @@ def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_poin
     ori_t = t.repeat(1, num_point_mesh, 1).contiguous().view(bs, num_point_mesh, 3)
     new_target = torch.bmm((new_target - ori_t), ori_base).contiguous()
 
-    dis = torch.sum(torch.mean(dis, dim=1))
+    new_target_front = target_front.view(1, 1, 3).contiguous()
+    ori_t = t.view(1, 1, 3)
+    new_target_front = torch.bmm((new_target_front - ori_t), ori_base).contiguous()
+ 
+    dis = torch.mean(dis)
 
     # print('------------> ', dis.item(), idx[0].item())
     del knn
-    return dis, new_points.detach(), new_target.detach()
+    return loss, dis, new_points.detach(), new_target.detach(), new_target_front.detach()
 
 
 class Loss_refine(_Loss):
@@ -106,5 +114,5 @@ class Loss_refine(_Loss):
         self.sym_list = sym_list
 
 
-    def forward(self, pred_r, pred_t, target, model_points, idx, points):
-        return loss_calculation(pred_r, pred_t, target, model_points, idx, points, self.num_pt_mesh, self.sym_list)
+    def forward(self, pred_r, pred_t, target, target_front, model_points, front, idx, points):
+        return loss_calculation(pred_r, pred_t, target, target_front, model_points, front, idx, points, self.num_pt_mesh, self.sym_list)

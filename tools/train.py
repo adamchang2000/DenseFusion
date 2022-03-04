@@ -41,6 +41,7 @@ parser.add_argument('--lr_rate', default=0.3, help='learning rate decay rate')
 parser.add_argument('--w', default=0.0015, help='learning rate')
 parser.add_argument('--w_rate', default=0.3, help='learning rate decay rate')
 parser.add_argument('--decay_margin', default=0.02, help='margin to decay lr & w')
+parser.add_argument('--refine_margin', default=0.02, help='margin to start the training of iterative refinement')
 parser.add_argument('--refine_epoch', default=15, help='epoch to start the training of iterative refinement')
 parser.add_argument('--noise_trans', default=0.03, help='range of the random noise of translation added to the training data')
 parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
@@ -151,22 +152,24 @@ def main():
             trange = tqdm(enumerate(dataloader), total=len(dataloader), desc="training")
             for batch_id, data in trange:
                 start_time = time.time()
-                points, choose, img, target, model_points, idx = data
-                points, choose, img, target, model_points, idx = Variable(points).cuda(), \
+                points, choose, img, target, target_front, model_points, front, idx = data
+                points, choose, img, target, target_front, model_points, front, idx = Variable(points).cuda(), \
                                                                  Variable(choose).cuda(), \
                                                                  Variable(img).cuda(), \
                                                                  Variable(target).cuda(), \
+                                                                 Variable(target_front).cuda(), \
                                                                  Variable(model_points).cuda(), \
+                                                                 Variable(front).cuda(), \
                                                                  Variable(idx).cuda()
                 
                 pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-                loss, dis, new_points, new_target = criterion(pred_r, pred_t, pred_c, target, model_points, idx, points, opt.w, opt.refine_start)
+                loss, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, target, target_front, model_points, front, idx, points, opt.w, opt.refine_start)
                 
                 if opt.refine_start:
                     for ite in range(0, opt.iteration):
                         pred_r, pred_t = refiner(new_points, emb, idx)
-                        dis, new_points, new_target = criterion_refine(pred_r, pred_t, new_target, model_points, idx, new_points)
-                        dis.backward()
+                        loss, dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
+                        loss.backward()
                 else:
                     loss.backward()
 
@@ -195,20 +198,22 @@ def main():
 
         trange = tqdm(enumerate(testdataloader), total=len(testdataloader), desc="testing")
         for batch_id, data in trange:
-            points, choose, img, target, model_points, idx = data
-            points, choose, img, target, model_points, idx = Variable(points).cuda(), \
+            points, choose, img, target, target_front, model_points, front, idx = data
+            points, choose, img, target, target_front, model_points, front, idx = Variable(points).cuda(), \
                                                              Variable(choose).cuda(), \
                                                              Variable(img).cuda(), \
                                                              Variable(target).cuda(), \
+                                                             Variable(target_front).cuda(), \
                                                              Variable(model_points).cuda(), \
+                                                             Variable(front).cuda(), \
                                                              Variable(idx).cuda()
             pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-            _, dis, new_points, new_target = criterion(pred_r, pred_t, pred_c, target, model_points, idx, points, opt.w, opt.refine_start)
+            _, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, target, target_front, model_points, front, idx, points, opt.w, opt.refine_start)
 
             if opt.refine_start:
                 for ite in range(0, opt.iteration):
                     pred_r, pred_t = refiner(new_points, emb, idx)
-                    dis, new_points, new_target = criterion_refine(pred_r, pred_t, new_target, model_points, idx, new_points)
+                    loss, dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
             dis = dis.item()
             test_dis += dis
             trange.set_postfix(dis=dis)
@@ -231,8 +236,7 @@ def main():
         #     opt.w *= opt.w_rate
         #     optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
 
-        #instead change this to epoch threshold
-        if epoch >= opt.refine_epoch and not opt.refine_start:
+        if (epoch >= opt.refine_epoch or best_test < opt.refine_margin) and not opt.refine_start:
             opt.refine_start = True
             #opt.batch_size = int(opt.batch_size / opt.iteration)
             optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)

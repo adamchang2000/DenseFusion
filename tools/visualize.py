@@ -128,7 +128,6 @@ def main():
     print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the testing set: {0}\nnumber of sample points on mesh: {1}\nsymmetry object list: {2}'.format(len(test_dataset), opt.num_points_mesh, opt.sym_list))
 
     criterion = Loss(opt.num_points_mesh, opt.sym_list)
-    criterion_refine = Loss_refine(opt.num_points_mesh, opt.sym_list)
 
     estimator.eval()
 
