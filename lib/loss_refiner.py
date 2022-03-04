@@ -91,7 +91,7 @@ def loss_calculation(pred_r, pred_t, target, model_points, idx, points, num_poin
     ori_t = t.repeat(1, num_point_mesh, 1).contiguous().view(bs, num_point_mesh, 3)
     new_target = torch.bmm((new_target - ori_t), ori_base).contiguous()
 
-    dis = torch.mean(dis)
+    dis = torch.sum(torch.mean(dis, dim=1))
 
     # print('------------> ', dis.item(), idx[0].item())
     del knn
