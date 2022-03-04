@@ -72,6 +72,7 @@ def main():
     parser.add_argument('--w', default=0.015, help='regularize confidence')
     parser.add_argument('--w_rate', default=0.3, help='regularize confidence refiner decay')
     parser.add_argument('--num_visualized', type=int, default = 5, help='number of training samples to visualize')
+    parser.add_argument('--image_size', type=int, default=25, help="square side length of cropped image")
     opt = parser.parse_args()
 
     opt.manualSeed = random.randint(1, 10000)
@@ -108,6 +109,8 @@ def main():
         #matching train
         opt.w *= opt.w_rate
 
+    print(opt.model)
+    print(opt.refine_model)
     if not opt.model and not opt.refine_model:
         raise Exception("this is visualizer code, pls pass in a model lol")
 
@@ -116,7 +119,7 @@ def main():
     elif opt.dataset == 'linemod':
         test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '')
     elif opt.dataset == 'custom':
-        test_dataset = PoseDataset_custom('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '')
+        test_dataset = PoseDataset_custom('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', opt.image_size, True)
     testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
     
     opt.sym_list = test_dataset.get_sym_list()

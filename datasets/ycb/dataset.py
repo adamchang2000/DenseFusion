@@ -15,8 +15,44 @@ import scipy.misc
 import scipy.io as scio
 
 
+def standardize_image_size(target_image_size, rmin, rmax, cmin, cmax, image_height, image_width):
+    height, width = rmax - rmin, cmax - cmin
+
+    if height > target_image_size:
+        diff = height - target_image_size
+        rmin += int(diff / 2)
+        rmax -= int((diff + 1) / 2)
+    
+    elif height < target_image_size:
+        diff = target_image_size - height
+        if rmin - int(diff / 2) < 0:
+            rmax += diff
+        elif rmax + int((diff + 1) / 2) >= image_height:
+            rmin -= diff
+        else:
+            rmin -= int(diff / 2)
+            rmax += int((diff + 1) / 2)
+    
+    if width > target_image_size:
+        diff = width - target_image_size
+        cmin += int(diff / 2)
+        cmax -= int((diff + 1) / 2)
+    
+    elif width < target_image_size:
+        diff = target_image_size - width
+        if cmin - int(diff / 2) < 0:
+            cmax += diff
+        elif cmax + int((diff + 1) / 2) >= image_width:
+            cmin -= diff
+        else:
+            cmin -= int(diff / 2)
+            cmax += int((diff + 1) / 2)
+    
+    return rmin, rmax, cmin, cmax
+    
+
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine):
+    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, image_size):
         if mode == 'train':
             self.path = 'datasets/ycb/dataset_config/train_data_list.txt'
         elif mode == 'test':
@@ -25,6 +61,8 @@ class PoseDataset(data.Dataset):
         self.root = root
         self.add_noise = add_noise
         self.noise_trans = noise_trans
+
+        self.image_size = image_size
 
         self.list = []
         self.real = []
@@ -152,18 +190,38 @@ class PoseDataset(data.Dataset):
 
         obj = meta['cls_indexes'].flatten().astype(np.int32)
 
+        #select an object
         while 1:
             idx = np.random.randint(0, len(obj))
             mask_depth = ma.getmaskarray(ma.masked_not_equal(depth, 0))
             mask_label = ma.getmaskarray(ma.masked_equal(label, obj[idx]))
             mask = mask_label * mask_depth
-            if len(mask.nonzero()[0]) > self.minimum_num_pt:
+            if len(mask.nonzero()[0]) <= self.minimum_num_pt:
+                continue
+
+            rmin, rmax, cmin, cmax = get_bbox(mask_label)
+            h, w, _= np.array(img).shape
+            rmin, rmax, cmin, cmax = max(0, rmin), min(h, rmax), max(0, cmin), min(w, cmax)
+            rmin, rmax, cmin, cmax = standardize_image_size(self.image_size, rmin, rmax, cmin, cmax, h, w)
+
+            choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
+
+            if len(choose) == 0:
+                continue
+
+            if len(choose) > self.num_pt:
+                c_mask = np.zeros(len(choose), dtype=int)
+                c_mask[:self.num_pt] = 1
+                np.random.shuffle(c_mask)
+                choose = choose[c_mask.nonzero()]
+                break
+            else:
+                choose = np.pad(choose, (0, self.num_pt - len(choose)), 'wrap')
                 break
 
         if self.add_noise:
             img = self.trancolor(img)
 
-        rmin, rmax, cmin, cmax = get_bbox(mask_label)
         img = np.transpose(np.array(img)[:, :, :3], (2, 0, 1))[:, rmin:rmax, cmin:cmax]
 
         if self.list[index][:8] == 'data_syn':
@@ -187,15 +245,6 @@ class PoseDataset(data.Dataset):
         target_r = meta['poses'][:, :, idx][:, 0:3]
         target_t = np.array([meta['poses'][:, :, idx][:, 3:4].flatten()])
         add_t = np.array([random.uniform(-self.noise_trans, self.noise_trans) for i in range(3)])
-
-        choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
-        if len(choose) > self.num_pt:
-            c_mask = np.zeros(len(choose), dtype=int)
-            c_mask[:self.num_pt] = 1
-            np.random.shuffle(c_mask)
-            choose = choose[c_mask.nonzero()]
-        else:
-            choose = np.pad(choose, (0, self.num_pt - len(choose)), 'wrap')
         
         depth_masked = depth[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         xmap_masked = self.xmap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
@@ -214,13 +263,6 @@ class PoseDataset(data.Dataset):
         # for it in cloud:
         #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
         # fw.close()
-
-        # dellist = [j for j in range(0, len(self.cld[obj[idx]]))]
-        # if self.refine:
-        #     dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_large)
-        # else:
-        #     dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_small)
-        # model_points = np.delete(self.cld[obj[idx]], dellist, axis=0)
 
         model_points = self.cld[obj[idx]]
         if self.refine:

@@ -4,6 +4,7 @@
 # Written by Chen
 # --------------------------------------------------------
 
+from tracemalloc import start
 import _init_paths
 import argparse
 import os
@@ -28,24 +29,27 @@ from lib.loss import Loss
 from lib.loss_refiner import Loss_refine
 from lib.utils import setup_logger
 
+from tqdm import tqdm
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default = 'ycb', help='ycb or linemod')
 parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir (''YCB_Video_Dataset'' or ''Linemod_preprocessed'')')
 parser.add_argument('--batch_size', type=int, default = 8, help='batch size')
-parser.add_argument('--workers', type=int, default = 10, help='number of data loading workers')
+parser.add_argument('--workers', type=int, default = 8, help='number of data loading workers')
 parser.add_argument('--lr', default=0.0001, help='learning rate')
 parser.add_argument('--lr_rate', default=0.3, help='learning rate decay rate')
-parser.add_argument('--w', default=0.015, help='learning rate')
+parser.add_argument('--w', default=0.0015, help='learning rate')
 parser.add_argument('--w_rate', default=0.3, help='learning rate decay rate')
 parser.add_argument('--decay_margin', default=0.02, help='margin to decay lr & w')
 parser.add_argument('--refine_margin', default=0.02, help='margin to start the training of iterative refinement')
-parser.add_argument('--refine_epoch', default=10, help='latest epoch to start refinement')
+parser.add_argument('--refine_epoch', default=15, help='epoch to start the training of iterative refinement')
 parser.add_argument('--noise_trans', default=0.03, help='range of the random noise of translation added to the training data')
 parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
 parser.add_argument('--nepoch', type=int, default=500, help='max number of epochs to train')
 parser.add_argument('--resume_posenet', type=str, default = '',  help='resume PoseNet model')
 parser.add_argument('--resume_refinenet', type=str, default = '',  help='resume PoseRefineNet model')
 parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
+parser.add_argument('--image_size', type=int, default=300, help="square side length of cropped image")
 opt = parser.parse_args()
 
 
@@ -60,6 +64,9 @@ def main():
         opt.outf = 'trained_models/ycb' #folder to save trained models
         opt.log_dir = 'experiments/logs/ycb' #folder to save logs
         opt.repeat_epoch = 1 #number of repeat times for one epoch training
+
+        #YCB IMAGES 300 SIZE LOOKS GOOD
+        opt.image_size = 300
     elif opt.dataset == 'linemod':
         opt.num_objects = 13
         opt.num_points = 500
@@ -71,7 +78,7 @@ def main():
         opt.num_points = 500
         opt.outf = 'trained_models/custom'
         opt.log_dir = 'experiments/logs/custom'
-        opt.repeat_epoch = 20
+        opt.repeat_epoch = 1
     else:
         print('Unknown dataset')
         return
@@ -90,7 +97,7 @@ def main():
         opt.decay_start = True
         opt.lr *= opt.lr_rate
         opt.w *= opt.w_rate
-        opt.batch_size = int(opt.batch_size / opt.iteration)
+        #opt.batch_size = int(opt.batch_size / opt.iteration)
         optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
     else:
         opt.refine_start = False
@@ -98,19 +105,19 @@ def main():
         optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
 
     if opt.dataset == 'ycb':
-        dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
+        dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size)
     elif opt.dataset == 'linemod':
         dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
     elif opt.dataset == 'custom':
-        dataset = PoseDataset_custom('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
+        dataset = PoseDataset_custom('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size, True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.workers)
     if opt.dataset == 'ycb':
-        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
+        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.image_size)
     elif opt.dataset == 'linemod':
         test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
     elif opt.dataset == 'custom':
-        test_dataset = PoseDataset_custom('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
-    testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
+        test_dataset = PoseDataset_custom('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.image_size, True)
+    testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=opt.batch_size, shuffle=False, num_workers=opt.workers)
     
     opt.sym_list = dataset.get_sym_list()
     opt.num_points_mesh = dataset.get_num_points_mesh()
@@ -142,7 +149,9 @@ def main():
         optimizer.zero_grad()
 
         for rep in range(opt.repeat_epoch):
-            for i, data in enumerate(dataloader, 0):
+            trange = tqdm(enumerate(dataloader), total=len(dataloader), desc="training")
+            for batch_id, data in trange:
+                start_time = time.time()
                 points, choose, img, target, target_front, model_points, front, idx = data
                 points, choose, img, target, target_front, model_points, front, idx = Variable(points).cuda(), \
                                                                  Variable(choose).cuda(), \
@@ -152,6 +161,7 @@ def main():
                                                                  Variable(model_points).cuda(), \
                                                                  Variable(front).cuda(), \
                                                                  Variable(idx).cuda()
+                
                 pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
                 loss, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, target, target_front, model_points, front, idx, points, opt.w, opt.refine_start)
                 
@@ -163,16 +173,14 @@ def main():
                 else:
                     loss.backward()
 
-                train_dis_avg += dis.item()
-                train_count += 1
+                dis = dis.item()
+                trange.set_postfix(dis=dis)
+                
+                optimizer.step()
+                optimizer.zero_grad()
 
-                if train_count % opt.batch_size == 0:
-                    logger.info('Train time {0} Epoch {1} Batch {2} Frame {3} Avg_dis:{4}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, int(train_count / opt.batch_size), train_count, train_dis_avg / opt.batch_size))
-                    optimizer.step()
-                    optimizer.zero_grad()
-                    train_dis_avg = 0
-
-                if train_count != 0 and train_count % 1000 == 0:
+                if batch_id != 0 and batch_id % (len(dataloader) // 4) == 0:
+                    logger.info('Epoch {} | Batch {} | dis:{}'.format(epoch, batch_id, dis))
                     if opt.refine_start:
                         torch.save(refiner.state_dict(), '{0}/pose_refine_model_current.pth'.format(opt.outf))
                     else:
@@ -188,7 +196,8 @@ def main():
         estimator.eval()
         refiner.eval()
 
-        for j, data in enumerate(testdataloader, 0):
+        trange = tqdm(enumerate(testdataloader), total=len(testdataloader), desc="testing")
+        for batch_id, data in trange:
             points, choose, img, target, target_front, model_points, front, idx = data
             points, choose, img, target, target_front, model_points, front, idx = Variable(points).cuda(), \
                                                              Variable(choose).cuda(), \
@@ -205,14 +214,13 @@ def main():
                 for ite in range(0, opt.iteration):
                     pred_r, pred_t = refiner(new_points, emb, idx)
                     loss, dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
-
-            test_dis += dis.item()
-            logger.info('Test time {0} Test Frame No.{1} dis:{2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), test_count, dis))
-
+            dis = dis.item()
+            test_dis += dis
+            trange.set_postfix(dis=dis)
             test_count += 1
 
         test_dis = test_dis / test_count
-        logger.info('Test time {0} Epoch {1} TEST FINISH Avg dis: {2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), epoch, test_dis))
+        logger.info('Epoch {} TEST FINISH Avg dis: {}'.format(epoch, test_dis))
         if test_dis <= best_test:
             best_test = test_dis
             if opt.refine_start:
@@ -221,27 +229,28 @@ def main():
                 torch.save(estimator.state_dict(), '{0}/pose_model_{1}_{2}.pth'.format(opt.outf, epoch, test_dis))
             print(epoch, '>>>>>>>>----------BEST TEST MODEL SAVED---------<<<<<<<<')
 
-        if best_test < opt.decay_margin and not opt.decay_start:
-            opt.decay_start = True
-            opt.lr *= opt.lr_rate
-            opt.w *= opt.w_rate
-            optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
+        #REMOVE DECAY
+        # if best_test < opt.decay_margin and not opt.decay_start:
+        #     opt.decay_start = True
+        #     opt.lr *= opt.lr_rate
+        #     opt.w *= opt.w_rate
+        #     optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
 
         if (epoch >= opt.refine_epoch or best_test < opt.refine_margin) and not opt.refine_start:
             opt.refine_start = True
-            opt.batch_size = int(opt.batch_size / opt.iteration)
+            #opt.batch_size = int(opt.batch_size / opt.iteration)
             optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
 
             if opt.dataset == 'ycb':
-                dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
+                dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size)
             elif opt.dataset == 'linemod':
                 dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
-            dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
+            dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.workers)
             if opt.dataset == 'ycb':
-                test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
+                test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.image_size)
             elif opt.dataset == 'linemod':
                 test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
-            testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
+            testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=opt.batch_size, shuffle=False, num_workers=opt.workers)
             
             opt.sym_list = dataset.get_sym_list()
             opt.num_points_mesh = dataset.get_num_points_mesh()
