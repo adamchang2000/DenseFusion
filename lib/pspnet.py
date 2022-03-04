@@ -50,10 +50,15 @@ class PSPNet(nn.Module):
         self.up_3 = PSPUpsample(64, 64)
 
         self.drop_2 = nn.Dropout2d(p=0.15)
+
+        #we don't want this softmax
+
         self.final = nn.Sequential(
             nn.Conv2d(64, 32, kernel_size=1),
             nn.LogSoftmax()
         )
+
+        #self.final = nn.Conv2d(64, 32, kernel_size=1)
 
         self.classifier = nn.Sequential(
             nn.Linear(deep_features_size, 256),

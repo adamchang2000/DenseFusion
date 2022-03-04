@@ -199,6 +199,8 @@ import math
 
 import numpy
 
+from scipy.spatial.transform import Rotation as R
+
 __version__ = '2018.02.08'
 __docformat__ = 'restructuredtext en'
 __all__ = ()
@@ -1889,6 +1891,20 @@ def is_same_quaternion(q0, q1):
     q0 = numpy.array(q0)
     q1 = numpy.array(q1)
     return numpy.allclose(q0, q1) or numpy.allclose(q0, -q1)
+
+def rotation_matrix_of_axis_angle(axis, theta):
+    """
+    Return the rotation matrix associated with counterclockwise rotation about
+    the given axis by theta radians.
+    """
+
+    axis = numpy.copy(axis)
+
+    axis /= numpy.linalg.norm(axis)
+
+    r = R.from_rotvec(axis * theta)
+
+    return r.as_matrix()
 
 
 def _import_module(name, package=None, warn=True, prefix='_py_', ignore='_'):

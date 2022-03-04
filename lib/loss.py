@@ -76,12 +76,12 @@ def loss_calculation(pred_r, pred_t, pred_c, target, target_front, model_points,
                 
                 target[i] = my_target
 
+    target = target.detach()
+
     dis = torch.mean(torch.norm((pred - target), dim=3), dim=2)
     front_dis = torch.mean(torch.norm((pred_front - target_front), dim=3), dim=2)
 
     loss = torch.sum(torch.mean(((dis + FRONT_LOSS_COEFF * front_dis) * pred_c - w * torch.log(pred_c)), dim=1))
-
-    #print("loss!", loss.shape)
     
     pred_c = pred_c.view(bs, num_p)
     how_max, which_max = torch.max(pred_c, 1)

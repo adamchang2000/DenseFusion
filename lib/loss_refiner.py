@@ -72,6 +72,8 @@ def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, 
             my_target = my_target.view(num_p, num_point_mesh, 3).contiguous()
             target[i] = my_target
 
+    target = target.detach()
+
     #print("shapes before diff", pred.shape, target.shape)
     
     dis = torch.mean(torch.norm((pred - target), dim=3), dim=2)
