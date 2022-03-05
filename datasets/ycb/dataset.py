@@ -328,7 +328,12 @@ class PoseDataset(data.Dataset):
         else:
             target = np.add(target, target_t)
             
-        target_front = front @ target_r.T + target_t
+        target_front = np.dot(front, target_r.T)
+
+        if self.add_noise:
+            target_front = np.add(target_front, target_t + add_t)
+        else:
+            target_front = np.add(target_front, target_t)
         
         return torch.from_numpy(cloud.astype(np.float32)), \
                torch.LongTensor(choose.astype(np.int32)), \
