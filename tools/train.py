@@ -231,11 +231,11 @@ def main():
             print(epoch, '>>>>>>>>----------BEST TEST MODEL SAVED---------<<<<<<<<')
 
         #REMOVE DECAY
-        # if best_test < opt.decay_margin and not opt.decay_start:
-        #     opt.decay_start = True
-        #     opt.lr *= opt.lr_rate
-        #     opt.w *= opt.w_rate
-        #     optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
+        if best_test < opt.decay_margin and not opt.decay_start:
+            opt.decay_start = True
+            opt.lr *= opt.lr_rate
+            opt.w *= opt.w_rate
+            optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
 
         if (epoch >= opt.refine_epoch or best_test < opt.refine_margin) and not opt.refine_start:
             opt.refine_start = True
@@ -259,7 +259,7 @@ def main():
             print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the training set: {0}\nlength of the testing set: {1}\nnumber of sample points on mesh: {2}\nsymmetry object list: {3}'.format(len(dataset), len(test_dataset), opt.num_points_mesh, opt.sym_list))
 
             criterion = Loss(opt.num_points_mesh, opt.sym_list, opt.use_normals)
-            criterion_refine = Loss_refine(opt.num_points_mesh, opt.sym_list. opt.use_normals)
+            criterion_refine = Loss_refine(opt.num_points_mesh, opt.sym_list, opt.use_normals)
 
 if __name__ == '__main__':
     os.environ['KMP_DUPLICATE_LIB_OK']='True'
