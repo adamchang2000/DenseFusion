@@ -37,9 +37,14 @@ class ModifiedResnet(nn.Module):
         return x
 
 class PoseNetFeat(nn.Module):
-    def __init__(self, num_points):
+    def __init__(self, num_points, use_normals):
         super(PoseNetFeat, self).__init__()
-        self.conv1 = torch.nn.Conv1d(3, 64, 1)
+
+        pcld_dim = 3
+        if use_normals:
+            pcld_dim += 3
+
+        self.conv1 = torch.nn.Conv1d(pcld_dim, 64, 1)
         #self.bn1 = torch.nn.BatchNorm1d(64)
         self.conv2 = torch.nn.Conv1d(64, 128, 1)
         #self.bn2 = torch.nn.BatchNorm1d(128)
@@ -92,11 +97,11 @@ class PoseNetFeat(nn.Module):
         return torch.cat([pointfeat_1, pointfeat_2, ap_x], 1) #128 + 256 + 1024
 
 class PoseNet(nn.Module):
-    def __init__(self, num_points, num_obj):
+    def __init__(self, num_points, num_obj, use_normals):
         super(PoseNet, self).__init__()
         self.num_points = num_points
         self.cnn = ModifiedResnet()
-        self.feat = PoseNetFeat(num_points)
+        self.feat = PoseNetFeat(num_points, use_normals)
         
         self.conv1_r = torch.nn.Conv1d(1408, 640, 1)
         self.conv1_t = torch.nn.Conv1d(1408, 640, 1)
@@ -166,9 +171,14 @@ class PoseNet(nn.Module):
 
 
 class PoseRefineNetFeat(nn.Module):
-    def __init__(self, num_points):
+    def __init__(self, num_points, use_normals):
         super(PoseRefineNetFeat, self).__init__()
-        self.conv1 = torch.nn.Conv1d(3, 64, 1)
+
+        pcld_dim = 3
+        if use_normals:
+            pcld_dim += 3
+
+        self.conv1 = torch.nn.Conv1d(pcld_dim, 64, 1)
         self.conv2 = torch.nn.Conv1d(64, 128, 1)
 
         self.e_conv1 = torch.nn.Conv1d(32, 64, 1)
@@ -200,10 +210,10 @@ class PoseRefineNetFeat(nn.Module):
         return ap_x
 
 class PoseRefineNet(nn.Module):
-    def __init__(self, num_points, num_obj):
+    def __init__(self, num_points, num_obj, use_normals):
         super(PoseRefineNet, self).__init__()
         self.num_points = num_points
-        self.feat = PoseRefineNetFeat(num_points)
+        self.feat = PoseRefineNetFeat(num_points, use_normals)
         
         self.conv1_r = torch.nn.Linear(1024, 512)
         self.conv1_t = torch.nn.Linear(1024, 512)

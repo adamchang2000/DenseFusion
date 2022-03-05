@@ -50,6 +50,7 @@ parser.add_argument('--resume_posenet', type=str, default = '',  help='resume Po
 parser.add_argument('--resume_refinenet', type=str, default = '',  help='resume PoseRefineNet model')
 parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
 parser.add_argument('--image_size', type=int, default=300, help="square side length of cropped image")
+parser.add_argument('--use_normals', action="store_true", default=False, help="estimate normals and augment pointcloud")
 opt = parser.parse_args()
 
 
@@ -83,9 +84,9 @@ def main():
         print('Unknown dataset')
         return
 
-    estimator = PoseNet(num_points = opt.num_points, num_obj = opt.num_objects)
+    estimator = PoseNet(num_points = opt.num_points, num_obj = opt.num_objects, use_normals = opt.use_normals)
     estimator.cuda()
-    refiner = PoseRefineNet(num_points = opt.num_points, num_obj = opt.num_objects)
+    refiner = PoseRefineNet(num_points = opt.num_points, num_obj = opt.num_objects, use_normals = opt.use_normals)
     refiner.cuda()
 
     if opt.resume_posenet != '':
@@ -105,14 +106,14 @@ def main():
         optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
 
     if opt.dataset == 'ycb':
-        dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size)
+        dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size, opt.use_normals)
     elif opt.dataset == 'linemod':
         dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
     elif opt.dataset == 'custom':
         dataset = PoseDataset_custom('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size, True)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.workers)
     if opt.dataset == 'ycb':
-        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.image_size)
+        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.image_size, opt.use_normals)
     elif opt.dataset == 'linemod':
         test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
     elif opt.dataset == 'custom':
@@ -124,8 +125,8 @@ def main():
 
     print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the training set: {0}\nlength of the testing set: {1}\nnumber of sample points on mesh: {2}\nsymmetry object list: {3}'.format(len(dataset), len(test_dataset), opt.num_points_mesh, opt.sym_list))
 
-    criterion = Loss(opt.num_points_mesh, opt.sym_list)
-    criterion_refine = Loss_refine(opt.num_points_mesh, opt.sym_list)
+    criterion = Loss(opt.num_points_mesh, opt.sym_list, opt.use_normals)
+    criterion_refine = Loss_refine(opt.num_points_mesh, opt.sym_list, opt.use_normals)
 
     best_test = np.Inf
 
@@ -242,12 +243,12 @@ def main():
             optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
 
             if opt.dataset == 'ycb':
-                dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size)
+                dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size, opt.use_normals)
             elif opt.dataset == 'linemod':
                 dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
             dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.workers)
             if opt.dataset == 'ycb':
-                test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.image_size)
+                test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.image_size, opt.use_normals)
             elif opt.dataset == 'linemod':
                 test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
             testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=opt.batch_size, shuffle=False, num_workers=opt.workers)
@@ -257,8 +258,8 @@ def main():
 
             print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the training set: {0}\nlength of the testing set: {1}\nnumber of sample points on mesh: {2}\nsymmetry object list: {3}'.format(len(dataset), len(test_dataset), opt.num_points_mesh, opt.sym_list))
 
-            criterion = Loss(opt.num_points_mesh, opt.sym_list)
-            criterion_refine = Loss_refine(opt.num_points_mesh, opt.sym_list)
+            criterion = Loss(opt.num_points_mesh, opt.sym_list, opt.use_normals)
+            criterion_refine = Loss_refine(opt.num_points_mesh, opt.sym_list. opt.use_normals)
 
 if __name__ == '__main__':
     os.environ['KMP_DUPLICATE_LIB_OK']='True'

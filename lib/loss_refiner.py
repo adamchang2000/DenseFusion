@@ -14,7 +14,7 @@ from knn_cuda import KNN
 
 from lib.loss_helpers import FRONT_LOSS_COEFF
 
-def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, idx, points, num_point_mesh, sym_list):
+def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, idx, points, num_point_mesh, sym_list, use_normals):
 
     knn = KNN(k=1, transpose_mode=True)
     bs, num_p, _ = pred_r.size()
@@ -88,11 +88,23 @@ def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, 
     #print("gotta do this stuff now", ori_t.shape, ori_base.shape, points.shape)
 
     t = ori_t[:,0]
-    points = points.view(bs, num_input_points, 3)
+
+    if use_normals:
+        points = points.contiguous().view(bs, num_input_points, 6)
+        normals = points[:,:,3:].contiguous()
+        points = points[:,:,:3].contiguous()
+    else:
+        points = points.contiguous().view(bs, num_input_points, 3)
+
 
     ori_base = ori_base.view(bs, 3, 3).contiguous()
     ori_t = t.repeat(1, num_input_points, 1).contiguous().view(bs, num_input_points, 3)
     new_points = torch.bmm((points - ori_t), ori_base).contiguous()
+
+    if use_normals:
+        normals = normals.view(bs, num_input_points, 3)
+        new_normals = torch.bmm((normals - ori_t), ori_base).contiguous()
+        new_points = torch.concat((new_points, new_normals), dim=2)
 
     new_target = ori_target.view(bs, num_point_mesh, 3).contiguous()
     ori_t = t.repeat(1, num_point_mesh, 1).contiguous().view(bs, num_point_mesh, 3)
@@ -111,11 +123,11 @@ def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, 
 
 class Loss_refine(_Loss):
 
-    def __init__(self, num_points_mesh, sym_list):
+    def __init__(self, num_points_mesh, sym_list, use_normals):
         super(Loss_refine, self).__init__(True)
         self.num_pt_mesh = num_points_mesh
         self.sym_list = sym_list
-
+        self.use_normals = use_normals
 
     def forward(self, pred_r, pred_t, target, target_front, model_points, front, idx, points):
-        return loss_calculation(pred_r, pred_t, target, target_front, model_points, front, idx, points, self.num_pt_mesh, self.sym_list)
+        return loss_calculation(pred_r, pred_t, target, target_front, model_points, front, idx, points, self.num_pt_mesh, self.sym_list, self.use_normals)

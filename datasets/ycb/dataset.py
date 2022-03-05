@@ -14,7 +14,8 @@ import copy
 import scipy.misc
 import scipy.io as scio
 import open3d as o3d
-
+from lib.depth_utils import compute_normals
+import cv2
 
 def standardize_image_size(target_image_size, rmin, rmax, cmin, cmax, image_height, image_width):
     height, width = rmax - rmin, cmax - cmin
@@ -64,7 +65,7 @@ def get_random_rotation_around_symmetry_axis(axis, symm_type, num_symm):
     
 
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, image_size=-1):
+    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, image_size=-1, use_normals=False):
         if mode == 'train':
             self.path = 'datasets/ycb/dataset_config/train_data_list.txt'
         elif mode == 'test':
@@ -75,6 +76,7 @@ class PoseDataset(data.Dataset):
         self.noise_trans = noise_trans
 
         self.image_size = image_size
+        self.use_normals = use_normals
 
         self.list = []
         self.real = []
@@ -273,10 +275,6 @@ class PoseDataset(data.Dataset):
         if self.list[index][:8] == 'data_syn':
             img_masked = img_masked + np.random.normal(loc=0.0, scale=7.0, size=img_masked.shape)
 
-        # p_img = np.transpose(img_masked, (1, 2, 0))
-        # scipy.misc.imsave('temp/{0}_input.png'.format(index), p_img)
-        # scipy.misc.imsave('temp/{0}_label.png'.format(index), mask[rmin:rmax, cmin:cmax].astype(np.int32))
-
         target_r = meta['poses'][:, :, idx][:, 0:3]
         target_t = np.array([meta['poses'][:, :, idx][:, 3:4].flatten()])
         add_t = np.array([random.uniform(-self.noise_trans, self.noise_trans) for i in range(3)])
@@ -294,12 +292,14 @@ class PoseDataset(data.Dataset):
             symmetry_augmentation = get_random_rotation_around_symmetry_axis(front, symm_type, num_symm)
             target_r = target_r @ symmetry_augmentation
 
+
+        cam_scale = meta['factor_depth'][0][0]
+
         depth_masked = depth[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         xmap_masked = self.xmap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         ymap_masked = self.ymap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         choose = np.array([choose])
 
-        cam_scale = meta['factor_depth'][0][0]
         pt2 = depth_masked / cam_scale
         pt0 = (ymap_masked - cam_cx) * pt2 / cam_fx
         pt1 = (xmap_masked - cam_cy) * pt2 / cam_fy
@@ -307,10 +307,13 @@ class PoseDataset(data.Dataset):
         if self.add_noise:
             cloud = np.add(cloud, add_t)
 
-        # fw = open('temp/{0}_cld.xyz'.format(index), 'w')
-        # for it in cloud:
-        #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-        # fw.close()
+        
+        #NORMALS
+        if self.use_normals:
+            depth_mm = (depth * (1000 / cam_scale)).astype(np.uint16)
+            normals = compute_normals(depth_mm, cam_fx, cam_fy)
+            normals_masked = normals[rmin:rmax, cmin:cmax].reshape((-1, 3))[choose].astype(np.float32).squeeze(0)
+            cloud = np.hstack((cloud, normals_masked))
 
         model_points = self.cld[obj[idx]]
         if self.refine:
@@ -318,11 +321,6 @@ class PoseDataset(data.Dataset):
         else:
             select_list = np.random.choice(len(model_points), self.num_pt_mesh_small, replace=False) # without replacement, so that it won't choice duplicate points
         model_points = model_points[select_list]
-
-        # fw = open('temp/{0}_model_points.xyz'.format(index), 'w')
-        # for it in model_points:
-        #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-        # fw.close()
 
         target = np.dot(model_points, target_r.T)
         if self.add_noise:
@@ -458,18 +456,6 @@ class PoseDataset(data.Dataset):
             if self.add_noise:
                 cloud = np.add(cloud, add_t)
 
-            # fw = open('temp/{0}_cld.xyz'.format(index), 'w')
-            # for it in cloud:
-            #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            # fw.close()
-
-            # dellist = [j for j in range(0, len(self.cld[obj[idx]]))]
-            # if self.refine:
-            #     dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_large)
-            # else:
-            #     dellist = random.sample(dellist, len(self.cld[obj[idx]]) - self.num_pt_mesh_small)
-            # model_points = np.delete(self.cld[obj[idx]], dellist, axis=0)
-
             model_points = self.cld[obj[idx]]
             if self.refine:
                 select_list = np.random.choice(len(model_points), self.num_pt_mesh_large, replace=False) # without replacement, so that it won't choice duplicate points
@@ -477,21 +463,12 @@ class PoseDataset(data.Dataset):
                 select_list = np.random.choice(len(model_points), self.num_pt_mesh_small, replace=False) # without replacement, so that it won't choice duplicate points
             model_points = model_points[select_list]
 
-            # fw = open('temp/{0}_model_points.xyz'.format(index), 'w')
-            # for it in model_points:
-            #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            # fw.close()
-
             target = np.dot(model_points, target_r.T)
             if self.add_noise:
                 target = np.add(target, target_t + add_t)
             else:
                 target = np.add(target, target_t)
 
-            # fw = open('temp/{0}_tar.xyz'.format(index), 'w')
-            # for it in target:
-            #    fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            # fw.close()
             
             data_output.append(([torch.from_numpy(cloud.astype(np.float32)), \
                 torch.LongTensor(choose.astype(np.int32)), \
