@@ -51,6 +51,7 @@ parser.add_argument('--resume_refinenet', type=str, default = '',  help='resume 
 parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
 parser.add_argument('--image_size', type=int, default=300, help="square side length of cropped image")
 parser.add_argument('--use_normals', action="store_true", default=False, help="estimate normals and augment pointcloud")
+parser.add_argument('--old_batch_mode', action="store_true", default=False, help="old batch mode, where batch size is 1 and gradients are accumulated")
 opt = parser.parse_args()
 
 
@@ -92,18 +93,25 @@ def main():
     if opt.resume_posenet != '':
         estimator.load_state_dict(torch.load('{0}/{1}'.format(opt.outf, opt.resume_posenet)))
 
+    if opt.old_batch_mode:
+        old_batch_size = opt.batch_size
+        opt.batch_size = 1
+        opt.image_size = -1
+
     if opt.resume_refinenet != '':
         refiner.load_state_dict(torch.load('{0}/{1}'.format(opt.outf, opt.resume_refinenet)))
         opt.refine_start = True
         opt.decay_start = True
         opt.lr *= opt.lr_rate
         opt.w *= opt.w_rate
-        #opt.batch_size = int(opt.batch_size / opt.iteration)
+        if opt.old_batch_mode:
+            old_batch_size = int(old_batch_size / opt.iteration)
         optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
     else:
         opt.refine_start = False
         opt.decay_start = False
         optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
+
 
     if opt.dataset == 'ycb':
         dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size, opt.use_normals)
@@ -176,11 +184,16 @@ def main():
 
                 dis = dis.item()
                 trange.set_postfix(dis=dis)
-                
-                optimizer.step()
-                optimizer.zero_grad()
 
-                if batch_id != 0 and batch_id % (len(dataloader) // 4) == 0:
+                if opt.old_batch_mode:
+                    if batch_id != 0 and batch_id % old_batch_size == 0:
+                        optimizer.step()
+                        optimizer.zero_grad()
+                else:
+                    optimizer.step()
+                    optimizer.zero_grad()
+
+                if batch_id != 0 and batch_id % (len(dataloader) // (4 * (old_batch_size if opt.old_batch_mode else 1))) == 0:
                     logger.info('Epoch {} | Batch {} | dis:{}'.format(epoch, batch_id, dis))
                     if opt.refine_start:
                         torch.save(refiner.state_dict(), '{0}/pose_refine_model_current.pth'.format(opt.outf))
@@ -239,7 +252,8 @@ def main():
 
         if (epoch >= opt.refine_epoch or best_test < opt.refine_margin) and not opt.refine_start:
             opt.refine_start = True
-            #opt.batch_size = int(opt.batch_size / opt.iteration)
+            if opt.old_batch_mode:
+                old_batch_size = int(old_batch_size / opt.iteration)
             optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
 
             if opt.dataset == 'ycb':
