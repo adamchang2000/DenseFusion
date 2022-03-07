@@ -103,7 +103,7 @@ def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, 
 
     if use_normals:
         normals = normals.view(bs, num_input_points, 3)
-        new_normals = torch.bmm((normals - ori_t), ori_base).contiguous()
+        new_normals = torch.bmm(normals, ori_base).contiguous()
         new_points = torch.concat((new_points, new_normals), dim=2)
 
     new_target = ori_target.view(bs, num_point_mesh, 3).contiguous()

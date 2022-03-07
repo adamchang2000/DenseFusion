@@ -38,6 +38,7 @@ parser.add_argument('--refine_model', type=str, default = '',  help='resume Pose
 parser.add_argument('--output', type=str, default='visualization', help='output for point vis')
 parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
 parser.add_argument('--image_size', type=int, default=300, help="square side length of cropped image")
+parser.add_argument('--use_normals', action="store_true", default=False, help="estimate normals and augment pointcloud")
 opt = parser.parse_args()
 
 if not os.path.isdir(opt.output):
@@ -64,18 +65,18 @@ ycb_toolbox_dir = 'YCB_Video_toolbox'
 result_wo_refine_dir = 'experiments/eval_result/ycb/Densefusion_wo_refine_result'
 result_refine_dir = 'experiments/eval_result/ycb/Densefusion_iterative_result'
 
-estimator = PoseNet(num_points = num_points, num_obj = num_obj)
+estimator = PoseNet(num_points = num_points, num_obj = num_obj, use_normals = opt.use_normals)
 estimator.cuda()
 estimator.load_state_dict(torch.load(opt.model))
 estimator.eval()
 
 if opt.refine_model != '':
-    refiner = PoseRefineNet(num_points = num_points, num_obj = num_obj)
+    refiner = PoseRefineNet(num_points = num_points, num_obj = num_obj, use_normals = opt.use_normals)
     refiner.cuda()
     refiner.load_state_dict(torch.load(opt.refine_model))
     refiner.eval()
 
-test_dataset = PoseDataset('test', num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', opt.image_size)
+test_dataset = PoseDataset('test', num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', use_normals = opt.use_normals)
 
 def get_pointcloud(model_points, t, rot_mat):
 
@@ -130,7 +131,14 @@ for now in range(len(test_dataset)):
 
         #print('my rot mat', my_rot_mat)
 
-        my_t = (points.view(bs * num_p, 1, 3) + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
+        if opt.use_normals:
+            points = points.contiguous().view(bs*num_p, 1, 6)
+            normals = points[:,:,3:].contiguous()
+            points = points[:,:,:3].contiguous()
+        else:
+            points = points.contiguous().view(bs*num_p, 1, 3)
+
+        my_t = (points + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
 
         if opt.refine_model != "":
             for ite in range(0, opt.iteration):
@@ -147,8 +155,16 @@ for now in range(len(test_dataset)):
 
                 R = Variable(torch.from_numpy(my_mat[:3, :3].astype(np.float32))).cuda().view(1, 3, 3)
                 my_mat[0:3, 3] = my_t
+
+                points = points.view(bs, num_p, 3)
                 
                 new_points = torch.bmm((points - T), R).contiguous()
+
+                if opt.use_normals:
+                    normals = normals.view(bs, num_p, 3)
+                    new_normals = torch.bmm(normals, R).contiguous()
+                    new_points = torch.concat((new_points, new_normals), dim=2)
+
                 pred_r, pred_t = refiner(new_points, emb, idx)
                 pred_r = pred_r.view(1, 1, -1)
                 pred_r = pred_r / (torch.norm(pred_r, dim=2).view(1, 1, 1))

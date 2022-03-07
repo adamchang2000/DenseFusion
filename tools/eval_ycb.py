@@ -126,6 +126,11 @@ add = defaultdict(list)
 
 knn = KNN(k=1, transpose_mode=True)
 
+test_dist = 0
+test_count = 0
+
+sym_list = test_dataset.get_sym_list()
+
 for now in range(len(test_dataset)):
     
     data_objs = test_dataset.get_all_objects(now)
@@ -193,7 +198,7 @@ for now in range(len(test_dataset)):
 
                 if opt.use_normals:
                     normals = normals.view(bs, num_p, 3)
-                    new_normals = torch.bmm((normals - T), R).contiguous()
+                    new_normals = torch.bmm(normals, R).contiguous()
                     new_points = torch.concat((new_points, new_normals), dim=2)
 
                 pred_r, pred_t = refiner(new_points, emb, idx)
@@ -227,6 +232,12 @@ for now in range(len(test_dataset)):
         adds_dist = torch.mean(adds_dists).detach().cpu().item()
         idx = idx.detach().cpu().item()
 
+        if idx in sym_list:
+            test_dist += adds_dist
+        else:
+            test_dist += add_dist
+        test_count += 1
+
         print("frame, idx, adds, add", now, idx, adds_dist, add_dist)
 
         adds[idx].append(adds_dist)
@@ -234,6 +245,8 @@ for now in range(len(test_dataset)):
 
         for d in data:
             del d
+
+print("DIST!", (test_dist / test_count))
 
 adds_aucs = {}
 add_aucs = {}
