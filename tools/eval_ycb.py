@@ -63,6 +63,7 @@ parser.add_argument('--dataset_root', type=str, default = '', help='dataset root
 parser.add_argument('--model', type=str, default = '',  help='resume PoseNet model')
 parser.add_argument('--refine_model', type=str, default = '',  help='resume PoseRefineNet model')
 parser.add_argument('--output', type=str, default='visualization', help='output for point vis')
+parser.add_argument('--use_normals', action="store_true", default=False, help="estimate normals and augment pointcloud")
 parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
 opt = parser.parse_args()
 
@@ -90,18 +91,18 @@ ycb_toolbox_dir = 'YCB_Video_toolbox'
 result_wo_refine_dir = 'experiments/eval_result/ycb/Densefusion_wo_refine_result'
 result_refine_dir = 'experiments/eval_result/ycb/Densefusion_iterative_result'
 
-estimator = PoseNet(num_points = num_points, num_obj = num_obj)
+estimator = PoseNet(num_points = num_points, num_obj = num_obj, use_normals = opt.use_normals)
 estimator.cuda()
 estimator.load_state_dict(torch.load(opt.model))
 estimator.eval()
 
 if opt.refine_model != '':
-    refiner = PoseRefineNet(num_points = num_points, num_obj = num_obj)
+    refiner = PoseRefineNet(num_points = num_points, num_obj = num_obj, use_normals = opt.use_normals)
     refiner.cuda()
     refiner.load_state_dict(torch.load(opt.refine_model))
     refiner.eval()
 
-test_dataset = PoseDataset('test', num_points, False, opt.dataset_root, 0.0, opt.refine_model != '')
+test_dataset = PoseDataset('test', num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', use_normals = opt.use_normals)
 
 def get_pointcloud(model_points, t, rot_mat):
 
@@ -121,6 +122,8 @@ def project_points(pts, cam_fx, cam_fy, cam_cx, cam_cy):
 colors = [(96, 60, 20), (156, 39, 6), (212, 91, 18), (243, 188, 46), (95, 84, 38)]
 
 adds = defaultdict(list)
+add = defaultdict(list)
+
 knn = KNN(k=1, transpose_mode=True)
 
 for now in range(len(test_dataset)):
@@ -159,7 +162,14 @@ for now in range(len(test_dataset)):
 
         #print('my rot mat', my_rot_mat)
 
-        my_t = (points.view(bs * num_p, 1, 3) + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
+        if opt.use_normals:
+            points = points.contiguous().view(bs*num_p, 1, 6)
+            normals = points[:,:,3:].contiguous()
+            points = points[:,:,:3].contiguous()
+        else:
+            points = points.contiguous().view(bs*num_p, 1, 3)
+
+        my_t = (points + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
 
         if opt.refine_model != "":
             for ite in range(0, opt.iteration):
@@ -176,8 +186,16 @@ for now in range(len(test_dataset)):
 
                 R = Variable(torch.from_numpy(my_mat[:3, :3].astype(np.float32))).cuda().view(1, 3, 3)
                 my_mat[0:3, 3] = my_t
+
+                points = points.view(bs, num_p, 3)
                 
                 new_points = torch.bmm((points - T), R).contiguous()
+
+                if opt.use_normals:
+                    normals = normals.view(bs, num_p, 3)
+                    new_normals = torch.bmm((normals - T), R).contiguous()
+                    new_points = torch.concat((new_points, new_normals), dim=2)
+
                 pred_r, pred_t = refiner(new_points, emb, idx)
                 pred_r = pred_r.view(1, 1, -1)
                 pred_r = pred_r / (torch.norm(pred_r, dim=2).view(1, 1, 1))
@@ -203,20 +221,31 @@ for now in range(len(test_dataset)):
         pred = get_pointcloud(model_points, my_t, my_r)
         pred = torch.unsqueeze(torch.from_numpy(pred.astype(np.float32)), 0).cuda()
 
-        dists, inds = knn(target, pred)
-        dist = torch.mean(dists).detach().cpu().item()
+        add_dist = torch.mean(torch.norm(target - pred, dim=2)).detach().cpu().item()
+
+        adds_dists, inds = knn(target, pred)
+        adds_dist = torch.mean(adds_dists).detach().cpu().item()
         idx = idx.detach().cpu().item()
 
-        print("idx, adds", idx, dist)
+        print("frame, idx, adds, add", now, idx, adds_dist, add_dist)
 
-        adds[idx].append(dist)
+        adds[idx].append(adds_dist)
+        add[idx].append(add_dist)
 
         for d in data:
             del d
 
 adds_aucs = {}
+add_aucs = {}
 
 for idx, dists in adds.items():
     adds_aucs[idx] = cal_auc(dists)
 
+for idx, dists in add.items():
+    add_aucs[idx] = cal_auc(dists)
+
+print("ADDS AUCs")
 print(adds_aucs)
+
+print("ADD AUCs")
+print(add_aucs)

@@ -461,12 +461,15 @@ class PoseDataset(data.Dataset):
             if self.add_noise:
                 cloud = np.add(cloud, add_t)
 
+            #NORMALS
+            if self.use_normals:
+                depth_mm = (depth * (1000 / cam_scale)).astype(np.uint16)
+                normals = compute_normals(depth_mm, cam_fx, cam_fy)
+                normals_masked = normals[rmin:rmax, cmin:cmax].reshape((-1, 3))[choose].astype(np.float32).squeeze(0)
+                cloud = np.hstack((cloud, normals_masked))
+
+            #return all model_points (no sampling), for evaluation
             model_points = self.cld[obj[idx]]
-            if self.refine:
-                select_list = np.random.choice(len(model_points), self.num_pt_mesh_large, replace=False) # without replacement, so that it won't choice duplicate points
-            else:
-                select_list = np.random.choice(len(model_points), self.num_pt_mesh_small, replace=False) # without replacement, so that it won't choice duplicate points
-            model_points = model_points[select_list]
 
             target = np.dot(model_points, target_r.T)
             if self.add_noise:
