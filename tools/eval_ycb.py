@@ -133,7 +133,7 @@ sym_list = test_dataset.get_sym_list()
 
 for now in range(len(test_dataset)):
     
-    data_objs = test_dataset.get_all_objects(now)
+    success_outputs, data_objs = test_dataset.get_all_objects(now)
 
     color_img_file = '{0}/{1}-color.png'.format(test_dataset.root, test_dataset.list[now])
     color_img = cv2.imread(color_img_file)

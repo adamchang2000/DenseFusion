@@ -170,7 +170,7 @@ def main():
                                                                  Variable(model_points).cuda(), \
                                                                  Variable(front).cuda(), \
                                                                  Variable(idx).cuda()
-                
+
                 pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
                 loss, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, target, target_front, model_points, front, idx, points, opt.w, opt.refine_start)
                 
@@ -221,7 +221,9 @@ def main():
                                                              Variable(model_points).cuda(), \
                                                              Variable(front).cuda(), \
                                                              Variable(idx).cuda()
+            
             pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
+
             _, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, target, target_front, model_points, front, idx, points, opt.w, opt.refine_start)
 
             if opt.refine_start:
