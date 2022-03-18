@@ -65,7 +65,7 @@ def get_random_rotation_around_symmetry_axis(axis, symm_type, num_symm):
     
 
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, image_size=-1, use_normals=False):
+    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, image_size=-1, use_normals=False, symm_rotation_aug=False):
         if mode == 'train':
             self.path = 'datasets/ycb/dataset_config/train_data_list.txt'
         elif mode == 'test':
@@ -77,6 +77,7 @@ class PoseDataset(data.Dataset):
 
         self.image_size = image_size
         self.use_normals = use_normals
+        self.symm_rotation_aug = symm_rotation_aug
 
         self.list = []
         self.real = []
@@ -283,15 +284,16 @@ class PoseDataset(data.Dataset):
         #right now, we are only dealing with one "front" axis
         front = np.expand_dims(self.frontd[obj[idx]][0], 0) * .1
 
-        #PERFORM SYMMETRY ROTATION AUGMENTATION
-        #symmetries
-        symm = self.symmd[obj[idx]]
+        if self.add_noise and self.symm_rotation_aug:
+            #PERFORM SYMMETRY ROTATION AUGMENTATION
+            #symmetries
+            symm = self.symmd[obj[idx]]
 
-        #calculate other peaks based on size of symm
-        if len(symm) > 0:
-            symm_type, num_symm = symm[0]
-            symmetry_augmentation = get_random_rotation_around_symmetry_axis(front, symm_type, num_symm)
-            target_r = target_r @ symmetry_augmentation
+            #calculate other peaks based on size of symm
+            if len(symm) > 0:
+                symm_type, num_symm = symm[0]
+                symmetry_augmentation = get_random_rotation_around_symmetry_axis(front, symm_type, num_symm)
+                target_r = target_r @ symmetry_augmentation
 
 
         cam_scale = meta['factor_depth'][0][0]
@@ -334,15 +336,19 @@ class PoseDataset(data.Dataset):
             target_front = np.add(target_front, target_t + add_t)
         else:
             target_front = np.add(target_front, target_t)
-        
-        return torch.from_numpy(cloud.astype(np.float32)), \
-               torch.LongTensor(choose.astype(np.int32)), \
-               self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
-               torch.from_numpy(target.astype(np.float32)), \
-               torch.from_numpy(target_front.astype(np.float32)), \
-               torch.from_numpy(model_points.astype(np.float32)), \
-               torch.from_numpy(front.astype(np.float32)), \
-               torch.LongTensor([int(obj[idx]) - 1])
+
+        end_points = {}
+
+        end_points["cloud"] = torch.from_numpy(cloud.astype(np.float32))
+        end_points["choose"] = torch.LongTensor(choose.astype(np.int32))
+        end_points["img"] = self.norm(torch.from_numpy(img_masked.astype(np.float32)))
+        end_points["target"] = torch.from_numpy(target.astype(np.float32))
+        end_points["target_front"] = torch.from_numpy(target_front.astype(np.float32))
+        end_points["model_points"] = torch.from_numpy(model_points.astype(np.float32))
+        end_points["front"] = torch.from_numpy(front.astype(np.float32))
+        end_points["obj_idx"] = torch.LongTensor([int(obj[idx]) - 1])
+
+        return end_points
 
     def __len__(self):
         return self.length

@@ -15,6 +15,8 @@ import numpy as np
 import pdb
 import torch.nn.functional as F
 from lib.pspnet import PSPNet
+from lib.RandLA.RandLANet import Network as RandLANet
+
 
 psp_models = {
     'resnet18': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=512, deep_features_size=256, backend='resnet18'),
@@ -23,6 +25,24 @@ psp_models = {
     'resnet101': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=2048, deep_features_size=1024, backend='resnet101'),
     'resnet152': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=2048, deep_features_size=1024, backend='resnet152')
 }
+
+class ConfigRandLA:
+    k_n = 16  # KNN
+    num_layers = 1  # Number of layers
+    num_points = 480 * 640 // 24  # Number of input points
+    num_classes = 22  # Number of valid classes
+    sub_grid_size = 0.06  # preprocess_parameter
+
+    batch_size = 3  # batch_size during training
+    val_batch_size = 3  # batch_size during validation and test
+    train_steps = 500  # Number of steps per epochs
+    val_steps = 100  # Number of validation steps per epoch
+    in_c = 3
+
+    sub_sampling_ratio = [4, 4, 4, 4]  # sampling ratio of random sampling at each layer
+    d_out = [32, 64, 128, 256]  # feature dimension
+    num_sub_points = [num_points // 4, num_points // 16, num_points // 64, num_points // 256]
+
 
 class ModifiedResnet(nn.Module):
 
@@ -96,12 +116,41 @@ class PoseNetFeat(nn.Module):
         #64 + 64 (level 1), 128 + 128 (level 2), 1024 global feature
         return torch.cat([pointfeat_1, pointfeat_2, ap_x], 1) #128 + 256 + 1024
 
+class DenseFusion(nn.Module):
+    def __init__(self, num_points):
+        super(DenseFusion, self).__init__()
+        self.conv2_rgb = torch.nn.Conv1d(128, 256, 1)
+        self.conv2_cld = torch.nn.Conv1d(128, 256, 1)
+
+        self.conv3 = torch.nn.Conv1d(256, 512, 1)
+        self.conv4 = torch.nn.Conv1d(512, 1024, 1)
+
+        self.ap1 = torch.nn.AvgPool1d(num_points)
+
+    def forward(self, rgb_emb, cld_emb):
+        bs, _, n_pts = cld_emb.size()
+        feat_1 = torch.cat((rgb_emb, cld_emb), dim=1)
+        rgb = F.relu(self.conv2_rgb(rgb_emb))
+        cld = F.relu(self.conv2_cld(cld_emb))
+
+        feat_2 = torch.cat((rgb, cld), dim=1)
+
+        rgbd = F.relu(self.conv3(feat_1))
+        rgbd = F.relu(self.conv4(rgbd))
+
+        ap_x = self.ap1(rgbd)
+
+        ap_x = ap_x.view(-1, 1024, 1).repeat(1, 1, n_pts)
+        return torch.cat([feat_1, feat_2, ap_x], 1) # 256 + 512 + 1024 = 1792
+
 class PoseNet(nn.Module):
     def __init__(self, num_points, num_obj, use_normals):
         super(PoseNet, self).__init__()
         self.num_points = num_points
         self.cnn = ModifiedResnet()
         self.feat = PoseNetFeat(num_points, use_normals)
+
+        self.df = DenseFusion(num_points)
         
         self.conv1_r = torch.nn.Conv1d(1408, 640, 1)
         self.conv1_t = torch.nn.Conv1d(1408, 640, 1)
@@ -121,20 +170,27 @@ class PoseNet(nn.Module):
 
         self.num_obj = num_obj
 
-    def forward(self, img, x, choose, obj):
+        rndla_config = ConfigRandLA
+        self.rndla = RandLANet(rndla_config)
 
-        out_img = self.cnn(img)
+    def forward(self, end_points):
+
+        out_img = self.cnn(end_points["img"])
         
         bs, di, _, _ = out_img.size()
 
         emb = out_img.view(bs, di, -1)
-        choose = choose.repeat(1, di, 1)
+        choose = end_points["choose"].repeat(1, di, 1)
         emb = torch.gather(emb, 2, choose).contiguous()
         
-        x = x.transpose(2, 1).contiguous()
+        x = end_points["cloud"].transpose(2, 1).contiguous()
+
+        #feat_x = self.rndla(x)
 
         #x is pointcloud
         #emb is cnn embedding
+        #ap_x = self.df(emb, feat_x)
+
         ap_x = self.feat(x, emb)
 
         rx = F.relu(self.conv1_r(ap_x))
@@ -153,7 +209,7 @@ class PoseNet(nn.Module):
         tx = self.conv4_t(tx).view(bs, self.num_obj, 3, self.num_points)
         cx = torch.sigmoid(self.conv4_c(cx)).view(bs, self.num_obj, 1, self.num_points)
 
-        obj = obj.unsqueeze(-1).unsqueeze(-1)
+        obj = end_points["obj_idx"].unsqueeze(-1).unsqueeze(-1)
         obj_rx = obj.repeat(1, 1, rx.shape[2], rx.shape[3])
         obj_tx = obj.repeat(1, 1, tx.shape[2], tx.shape[3])
         obj_cx = obj.repeat(1, 1, cx.shape[2], cx.shape[3])
@@ -166,7 +222,12 @@ class PoseNet(nn.Module):
         out_tx = out_tx.contiguous().transpose(2, 1).contiguous()
         out_cx = out_cx.contiguous().transpose(2, 1).contiguous()
 
-        return out_rx, out_tx, out_cx, emb.detach()
+        end_points["pred_r"] = out_rx
+        end_points["pred_t"] = out_tx
+        end_points["pred_c"] = out_cx
+        end_points["emb"] = emb.detach()
+
+        return end_points
  
 
 
@@ -226,7 +287,12 @@ class PoseRefineNet(nn.Module):
 
         self.num_obj = num_obj
 
-    def forward(self, x, emb, obj):
+    def forward(self, end_points, refine_iteration):
+
+        x = end_points["new_points"]
+        emb = end_points["emb"]
+        obj = end_points["obj_idx"]
+
         bs = x.size()[0]
         
         x = x.transpose(2, 1).contiguous()
@@ -253,4 +319,7 @@ class PoseRefineNet(nn.Module):
 
         #print("shapes!", out_rx.shape, out_tx.shape)
 
-        return out_rx, out_tx
+        end_points["refiner_pred_r_" + str(refine_iteration)] = out_rx
+        end_points["refiner_pred_t_" + str(refine_iteration)] = out_tx
+
+        return end_points

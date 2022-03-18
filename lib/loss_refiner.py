@@ -14,7 +14,16 @@ from knn_cuda import KNN
 
 from lib.loss_helpers import FRONT_LOSS_COEFF
 
-def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, idx, points, num_point_mesh, sym_list, use_normals):
+def loss_calculation(end_points, refine_iteration, num_point_mesh, sym_list, use_normals):
+
+    pred_r = end_points["refiner_pred_r_" + str(refine_iteration)]
+    pred_t = end_points["refiner_pred_t_" + str(refine_iteration)]
+    target = end_points["new_target"]
+    target_front = end_points["new_target_front"]
+    model_points = end_points["model_points"]
+    front = end_points["front"]
+    points = end_points["new_points"]
+    idx = end_points["obj_idx"]
 
     knn = KNN(k=1, transpose_mode=True)
     bs, num_p, _ = pred_r.size()
@@ -116,9 +125,13 @@ def loss_calculation(pred_r, pred_t, target, target_front, model_points, front, 
  
     dis = torch.mean(dis)
 
+    end_points["new_points"] = new_points.detach()
+    end_points["new_target"] = new_target.detach()
+    end_points["new_target_front"] = new_target_front.detach()
+
     # print('------------> ', dis.item(), idx[0].item())
     del knn
-    return loss, dis, new_points.detach(), new_target.detach(), new_target_front.detach()
+    return loss, dis, end_points
 
 
 class Loss_refine(_Loss):
@@ -129,5 +142,5 @@ class Loss_refine(_Loss):
         self.sym_list = sym_list
         self.use_normals = use_normals
 
-    def forward(self, pred_r, pred_t, target, target_front, model_points, front, idx, points):
-        return loss_calculation(pred_r, pred_t, target, target_front, model_points, front, idx, points, self.num_pt_mesh, self.sym_list, self.use_normals)
+    def forward(self, end_points, refine_iteration):
+        return loss_calculation(end_points, refine_iteration, self.num_pt_mesh, self.sym_list, self.use_normals)

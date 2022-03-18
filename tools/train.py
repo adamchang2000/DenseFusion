@@ -159,25 +159,28 @@ def main():
 
         for rep in range(opt.repeat_epoch):
             trange = tqdm(enumerate(dataloader), total=len(dataloader), desc="training")
-            for batch_id, data in trange:
+            for batch_id, end_points in trange:
                 start_time = time.time()
-                points, choose, img, target, target_front, model_points, front, idx = data
-                points, choose, img, target, target_front, model_points, front, idx = Variable(points).cuda(), \
-                                                                 Variable(choose).cuda(), \
-                                                                 Variable(img).cuda(), \
-                                                                 Variable(target).cuda(), \
-                                                                 Variable(target_front).cuda(), \
-                                                                 Variable(model_points).cuda(), \
-                                                                 Variable(front).cuda(), \
-                                                                 Variable(idx).cuda()
 
-                pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-                loss, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, target, target_front, model_points, front, idx, points, opt.w, opt.refine_start)
+                end_points_cuda = {}
+                for k, v in end_points.items():
+                    end_points_cuda[k] = Variable(v).cuda()
+
+                end_points = end_points_cuda
+
+                #pred_r, pred_t, pred_c, emb = estimator(end_points)
+                end_points = estimator(end_points)
+
+                #loss, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, end_points, opt.w, opt.refine_start)
+                loss, dis, end_points = criterion(end_points, opt.w, opt.refine_start)
                 
                 if opt.refine_start:
                     for ite in range(0, opt.iteration):
-                        pred_r, pred_t = refiner(new_points, emb, idx)
-                        loss, dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
+                        #pred_r, pred_t = refiner(new_points, emb, idx)
+                        end_points = refiner(end_points, ite)
+
+                        #loss, dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
+                        loss, dis, end_points = criterion_refine(end_points, ite)
                         loss.backward()
                 else:
                     loss.backward()
@@ -212,24 +215,26 @@ def main():
 
         trange = tqdm(enumerate(testdataloader), total=len(testdataloader), desc="testing")
         for batch_id, data in trange:
-            points, choose, img, target, target_front, model_points, front, idx = data
-            points, choose, img, target, target_front, model_points, front, idx = Variable(points).cuda(), \
-                                                             Variable(choose).cuda(), \
-                                                             Variable(img).cuda(), \
-                                                             Variable(target).cuda(), \
-                                                             Variable(target_front).cuda(), \
-                                                             Variable(model_points).cuda(), \
-                                                             Variable(front).cuda(), \
-                                                             Variable(idx).cuda()
-            
-            pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
 
-            _, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, target, target_front, model_points, front, idx, points, opt.w, opt.refine_start)
+            end_points_cuda = {}
+            for k, v in end_points:
+                end_points_cuda[k] = Variable(v).cuda()
+
+            end_points = end_points_cuda
+            
+            #pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
+            end_points = estimator(end_points)
+
+            #_, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, target, target_front, model_points, front, idx, points, opt.w, opt.refine_start)
+            _, dis, end_points = criterion(end_points, opt.w, opt.refine_start)
 
             if opt.refine_start:
                 for ite in range(0, opt.iteration):
-                    pred_r, pred_t = refiner(new_points, emb, idx)
-                    loss, dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
+                    #pred_r, pred_t = refiner(new_points, emb, idx)
+                    end_points = refiner(end_points, ite)
+
+                    #loss, dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
+                    _, dis, end_points = criterion_refine(end_points, ite)
             dis = dis.item()
             test_dis += dis
             trange.set_postfix(dis=dis)
