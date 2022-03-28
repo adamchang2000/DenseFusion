@@ -26,6 +26,9 @@ def loss_calculation(end_points, w, refine, num_point_mesh, sym_list, use_normal
     front = end_points["front"]
     points = end_points["cloud"]
     idx = end_points["obj_idx"]
+    
+    if use_normals:
+        normals = end_points["normals"]
 
     #print("shapes loss regular", pred_r.shape, pred_t.shape, pred_c.shape, target.shape, model_points.shape, points.shape)
 
@@ -61,12 +64,7 @@ def loss_calculation(end_points, w, refine, num_point_mesh, sym_list, use_normal
     pred_t = pred_t.contiguous().view(bs*num_p, 1, 3)
     ori_t = pred_t
 
-    if use_normals:
-        points = points.contiguous().view(bs*num_p, 1, 6)
-        normals = points[:,:,3:].contiguous()
-        points = points[:,:,:3].contiguous()
-    else:
-        points = points.contiguous().view(bs*num_p, 1, 3)
+    points = points.contiguous().view(bs*num_p, 1, 3)
         
     pred_c = pred_c.contiguous().view(bs, num_p)
 
@@ -132,9 +130,8 @@ def loss_calculation(end_points, w, refine, num_point_mesh, sym_list, use_normal
     new_points = torch.bmm((points - ori_t), ori_base).contiguous()
 
     if use_normals:
-        normals = normals.view(bs, num_p, 3)
+        normals = normals.contiguous().view(bs, num_p, 3)
         new_normals = torch.bmm(normals, ori_base).contiguous()
-        new_points = torch.concat((new_points, new_normals), dim=2)
 
     new_target = ori_target[:,0].view(bs, num_point_mesh, 3).contiguous()
     ori_t = t.repeat(1, num_point_mesh, 1, 1).contiguous().view(bs, num_point_mesh, 3)
@@ -153,6 +150,7 @@ def loss_calculation(end_points, w, refine, num_point_mesh, sym_list, use_normal
     dis = torch.mean(dis)
 
     end_points["new_points"] = new_points.detach()
+    end_points["new_normals"] = new_normals.detach()
     end_points["new_target"] = new_target.detach()
     end_points["new_target_front"] = new_target_front.detach()
 

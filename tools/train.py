@@ -28,6 +28,7 @@ from lib.network import PoseNet, PoseRefineNet
 from lib.loss import Loss
 from lib.loss_refiner import Loss_refine
 from lib.utils import setup_logger
+from lib.randla_utils import randla_processing
 
 from tqdm import tqdm
 
@@ -51,9 +52,9 @@ parser.add_argument('--resume_refinenet', type=str, default = '',  help='resume 
 parser.add_argument('--start_epoch', type=int, default = 1, help='which epoch to start')
 parser.add_argument('--image_size', type=int, default=300, help="square side length of cropped image")
 parser.add_argument('--use_normals', action="store_true", default=False, help="estimate normals and augment pointcloud")
+parser.add_argument('--use_colors', action="store_true", default=False, help="add colors to pointcloud")
 parser.add_argument('--old_batch_mode', action="store_true", default=False, help="old batch mode, where batch size is 1 and gradients are accumulated")
 opt = parser.parse_args()
-
 
 def main():
     opt.manualSeed = random.randint(1, 10000)
@@ -85,9 +86,9 @@ def main():
         print('Unknown dataset')
         return
 
-    estimator = PoseNet(num_points = opt.num_points, num_obj = opt.num_objects, use_normals = opt.use_normals)
+    estimator = PoseNet(num_points = opt.num_points, num_obj = opt.num_objects, use_normals = opt.use_normals, use_colors = opt.use_colors)
     estimator.cuda()
-    refiner = PoseRefineNet(num_points = opt.num_points, num_obj = opt.num_objects, use_normals = opt.use_normals)
+    refiner = PoseRefineNet(num_points = opt.num_points, num_obj = opt.num_objects, use_normals = opt.use_normals, use_colors = opt.use_colors)
     refiner.cuda()
 
     if opt.resume_posenet != '':
@@ -114,14 +115,14 @@ def main():
 
 
     if opt.dataset == 'ycb':
-        dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size, opt.use_normals)
+        dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size, opt.use_normals, opt.use_colors)
     elif opt.dataset == 'linemod':
         dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
     elif opt.dataset == 'custom':
         dataset = PoseDataset_custom('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size, True)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.workers)
     if opt.dataset == 'ycb':
-        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.image_size, opt.use_normals)
+        test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.image_size, opt.use_normals, opt.use_colors)
     elif opt.dataset == 'linemod':
         test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
     elif opt.dataset == 'custom':
@@ -167,6 +168,8 @@ def main():
                     end_points_cuda[k] = Variable(v).cuda()
 
                 end_points = end_points_cuda
+
+                end_points = randla_processing(end_points)
 
                 #pred_r, pred_t, pred_c, emb = estimator(end_points)
                 end_points = estimator(end_points)
@@ -264,12 +267,12 @@ def main():
             optimizer = optim.Adam(refiner.parameters(), lr=opt.lr)
 
             if opt.dataset == 'ycb':
-                dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size, opt.use_normals)
+                dataset = PoseDataset_ycb('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size, opt.use_normals, opt.use_colors)
             elif opt.dataset == 'linemod':
                 dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
             dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.workers)
             if opt.dataset == 'ycb':
-                test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.image_size, opt.use_normals)
+                test_dataset = PoseDataset_ycb('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.image_size, opt.use_normals, opt.use_colors)
             elif opt.dataset == 'linemod':
                 test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
             testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=opt.batch_size, shuffle=False, num_workers=opt.workers)

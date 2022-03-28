@@ -65,7 +65,7 @@ def get_random_rotation_around_symmetry_axis(axis, symm_type, num_symm):
     
 
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, image_size=-1, use_normals=False, symm_rotation_aug=False):
+    def __init__(self, mode, num_pt, add_noise, root, noise_trans, refine, image_size=-1, use_normals=False, use_colors=False, symm_rotation_aug=False):
         if mode == 'train':
             self.path = 'datasets/ycb/dataset_config/train_data_list.txt'
         elif mode == 'test':
@@ -77,6 +77,7 @@ class PoseDataset(data.Dataset):
 
         self.image_size = image_size
         self.use_normals = use_normals
+        self.use_colors = use_colors
         self.symm_rotation_aug = symm_rotation_aug
 
         self.list = []
@@ -315,7 +316,6 @@ class PoseDataset(data.Dataset):
             depth_mm = (depth * (1000 / cam_scale)).astype(np.uint16)
             normals = compute_normals(depth_mm, cam_fx, cam_fy)
             normals_masked = normals[rmin:rmax, cmin:cmax].reshape((-1, 3))[choose].astype(np.float32).squeeze(0)
-            cloud = np.hstack((cloud, normals_masked))
 
         model_points = self.cld[obj[idx]]
         if self.refine:
@@ -337,11 +337,24 @@ class PoseDataset(data.Dataset):
         else:
             target_front = np.add(target_front, target_t)
 
+
+        img_normalized = self.norm(torch.from_numpy(img_masked.astype(np.float32)))
+
+        if self.use_colors:
+            cloud_colors = img_normalized.view((3, -1)).transpose(0, 1)[choose]
+
         end_points = {}
 
         end_points["cloud"] = torch.from_numpy(cloud.astype(np.float32))
+
+        if self.use_normals:
+            end_points["normals"] = torch.from_numpy(normals_masked.astype(np.float32))
+
+        if self.use_colors:
+            end_points["cloud_colors"] = cloud_colors
+
         end_points["choose"] = torch.LongTensor(choose.astype(np.int32))
-        end_points["img"] = self.norm(torch.from_numpy(img_masked.astype(np.float32)))
+        end_points["img"] = img_normalized
         end_points["target"] = torch.from_numpy(target.astype(np.float32))
         end_points["target_front"] = torch.from_numpy(target_front.astype(np.float32))
         end_points["model_points"] = torch.from_numpy(model_points.astype(np.float32))

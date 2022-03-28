@@ -25,6 +25,9 @@ def loss_calculation(end_points, refine_iteration, num_point_mesh, sym_list, use
     points = end_points["new_points"]
     idx = end_points["obj_idx"]
 
+    if use_normals:
+        normals = end_points["new_normals"]
+
     knn = KNN(k=1, transpose_mode=True)
     bs, num_p, _ = pred_r.size()
     num_input_points = len(points[0])
@@ -98,13 +101,7 @@ def loss_calculation(end_points, refine_iteration, num_point_mesh, sym_list, use
 
     t = ori_t[:,0]
 
-    if use_normals:
-        points = points.contiguous().view(bs, num_input_points, 6)
-        normals = points[:,:,3:].contiguous()
-        points = points[:,:,:3].contiguous()
-    else:
-        points = points.contiguous().view(bs, num_input_points, 3)
-
+    points = points.contiguous().view(bs, num_input_points, 3)
 
     ori_base = ori_base.view(bs, 3, 3).contiguous()
     ori_t = t.repeat(1, num_input_points, 1).contiguous().view(bs, num_input_points, 3)
@@ -113,7 +110,6 @@ def loss_calculation(end_points, refine_iteration, num_point_mesh, sym_list, use
     if use_normals:
         normals = normals.view(bs, num_input_points, 3)
         new_normals = torch.bmm(normals, ori_base).contiguous()
-        new_points = torch.concat((new_points, new_normals), dim=2)
 
     new_target = ori_target.view(bs, num_point_mesh, 3).contiguous()
     ori_t = t.repeat(1, num_point_mesh, 1).contiguous().view(bs, num_point_mesh, 3)
@@ -126,6 +122,7 @@ def loss_calculation(end_points, refine_iteration, num_point_mesh, sym_list, use
     dis = torch.mean(dis)
 
     end_points["new_points"] = new_points.detach()
+    end_points["new_normals"] = new_normals.detach()
     end_points["new_target"] = new_target.detach()
     end_points["new_target_front"] = new_target_front.detach()
 

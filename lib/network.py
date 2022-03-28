@@ -16,6 +16,7 @@ import pdb
 import torch.nn.functional as F
 from lib.pspnet import PSPNet
 from lib.RandLA.RandLANet import Network as RandLANet
+from lib.randla_utils import ConfigRandLA
 
 
 psp_models = {
@@ -25,23 +26,6 @@ psp_models = {
     'resnet101': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=2048, deep_features_size=1024, backend='resnet101'),
     'resnet152': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=2048, deep_features_size=1024, backend='resnet152')
 }
-
-class ConfigRandLA:
-    k_n = 16  # KNN
-    num_layers = 1  # Number of layers
-    num_points = 480 * 640 // 24  # Number of input points
-    num_classes = 22  # Number of valid classes
-    sub_grid_size = 0.06  # preprocess_parameter
-
-    batch_size = 3  # batch_size during training
-    val_batch_size = 3  # batch_size during validation and test
-    train_steps = 500  # Number of steps per epochs
-    val_steps = 100  # Number of validation steps per epoch
-    in_c = 3
-
-    sub_sampling_ratio = [4, 4, 4, 4]  # sampling ratio of random sampling at each layer
-    d_out = [32, 64, 128, 256]  # feature dimension
-    num_sub_points = [num_points // 4, num_points // 16, num_points // 64, num_points // 256]
 
 
 class ModifiedResnet(nn.Module):
@@ -57,7 +41,7 @@ class ModifiedResnet(nn.Module):
         return x
 
 class PoseNetFeat(nn.Module):
-    def __init__(self, num_points, use_normals):
+    def __init__(self, num_points, use_normals, use_colors):
         super(PoseNetFeat, self).__init__()
 
         pcld_dim = 3
@@ -144,17 +128,17 @@ class DenseFusion(nn.Module):
         return torch.cat([feat_1, feat_2, ap_x], 1) # 256 + 512 + 1024 = 1792
 
 class PoseNet(nn.Module):
-    def __init__(self, num_points, num_obj, use_normals):
+    def __init__(self, num_points, num_obj, use_normals, use_colors):
         super(PoseNet, self).__init__()
         self.num_points = num_points
         self.cnn = ModifiedResnet()
-        self.feat = PoseNetFeat(num_points, use_normals)
+        #self.feat = PoseNetFeat(num_points, use_normals)
 
         self.df = DenseFusion(num_points)
         
-        self.conv1_r = torch.nn.Conv1d(1408, 640, 1)
-        self.conv1_t = torch.nn.Conv1d(1408, 640, 1)
-        self.conv1_c = torch.nn.Conv1d(1408, 640, 1)
+        self.conv1_r = torch.nn.Conv1d(1792, 640, 1)
+        self.conv1_t = torch.nn.Conv1d(1792, 640, 1)
+        self.conv1_c = torch.nn.Conv1d(1792, 640, 1)
 
         self.conv2_r = torch.nn.Conv1d(640, 256, 1)
         self.conv2_t = torch.nn.Conv1d(640, 256, 1)
@@ -173,6 +157,9 @@ class PoseNet(nn.Module):
         rndla_config = ConfigRandLA
         self.rndla = RandLANet(rndla_config)
 
+        self.use_normals = use_normals
+        self.use_colors = use_colors
+
     def forward(self, end_points):
 
         out_img = self.cnn(end_points["img"])
@@ -182,16 +169,26 @@ class PoseNet(nn.Module):
         emb = out_img.view(bs, di, -1)
         choose = end_points["choose"].repeat(1, di, 1)
         emb = torch.gather(emb, 2, choose).contiguous()
-        
-        x = end_points["cloud"].transpose(2, 1).contiguous()
 
-        #feat_x = self.rndla(x)
+        features = end_points["cloud"]
+
+        if self.use_normals:
+            normals = end_points["normals"]
+            features = torch.cat((features, normals), dim=-1)
+        
+        if self.use_colors:
+            colors = end_points["cloud_colors"]
+            features = torch.cat((features, colors), dim=-1)
+
+        end_points["RLA_features"] = features.transpose(1, 2)
+        end_points = self.rndla(end_points)
+        feat_x = end_points["RLA_embeddings"]
 
         #x is pointcloud
         #emb is cnn embedding
-        #ap_x = self.df(emb, feat_x)
+        ap_x = self.df(emb, feat_x)
 
-        ap_x = self.feat(x, emb)
+        #ap_x = self.feat(x, emb)
 
         rx = F.relu(self.conv1_r(ap_x))
         tx = F.relu(self.conv1_t(ap_x))
@@ -232,11 +229,13 @@ class PoseNet(nn.Module):
 
 
 class PoseRefineNetFeat(nn.Module):
-    def __init__(self, num_points, use_normals):
+    def __init__(self, num_points, use_normals, use_colors):
         super(PoseRefineNetFeat, self).__init__()
 
         pcld_dim = 3
         if use_normals:
+            pcld_dim += 3
+        if use_colors:
             pcld_dim += 3
 
         self.conv1 = torch.nn.Conv1d(pcld_dim, 64, 1)
@@ -271,10 +270,10 @@ class PoseRefineNetFeat(nn.Module):
         return ap_x
 
 class PoseRefineNet(nn.Module):
-    def __init__(self, num_points, num_obj, use_normals):
+    def __init__(self, num_points, num_obj, use_normals, use_colors):
         super(PoseRefineNet, self).__init__()
         self.num_points = num_points
-        self.feat = PoseRefineNetFeat(num_points, use_normals)
+        self.feat = PoseRefineNetFeat(num_points, use_normals, use_colors)
         
         self.conv1_r = torch.nn.Linear(1024, 512)
         self.conv1_t = torch.nn.Linear(1024, 512)
