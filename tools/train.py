@@ -35,14 +35,14 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default = 'ycb', help='ycb or linemod')
 parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir (''YCB_Video_Dataset'' or ''Linemod_preprocessed'')')
-parser.add_argument('--batch_size', type=int, default = 8, help='batch size')
+parser.add_argument('--batch_size', type=int, default = 4, help='batch size')
 parser.add_argument('--workers', type=int, default = 8, help='number of data loading workers')
 parser.add_argument('--lr', default=0.0001, help='learning rate')
 parser.add_argument('--lr_rate', default=0.3, help='learning rate decay rate')
 parser.add_argument('--w', default=0.015, help='learning rate')
 parser.add_argument('--w_rate', default=0.3, help='learning rate decay rate')
 parser.add_argument('--decay_margin', default=0.015, help='margin to decay lr & w')
-parser.add_argument('--refine_margin', default=0.015, help='margin to start the training of iterative refinement')
+parser.add_argument('--refine_margin', default=0.00015, help='margin to start the training of iterative refinement')
 parser.add_argument('--refine_epoch', default=25, help='epoch to start the training of iterative refinement')
 parser.add_argument('--noise_trans', default=0.01, help='range of the random noise of translation added to the training data')
 parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
@@ -67,9 +67,6 @@ def main():
         opt.outf = 'trained_models/ycb' #folder to save trained models
         opt.log_dir = 'experiments/logs/ycb' #folder to save logs
         opt.repeat_epoch = 1 #number of repeat times for one epoch training
-
-        #YCB IMAGES 300 SIZE LOOKS GOOD
-        opt.image_size = 300
     elif opt.dataset == 'linemod':
         opt.num_objects = 13
         opt.num_points = 500
@@ -87,8 +84,10 @@ def main():
         return
 
     estimator = PoseNet(num_points = opt.num_points, num_obj = opt.num_objects, use_normals = opt.use_normals, use_colors = opt.use_colors)
+    estimator = nn.DataParallel(estimator)
     estimator.cuda()
     refiner = PoseRefineNet(num_points = opt.num_points, num_obj = opt.num_objects, use_normals = opt.use_normals, use_colors = opt.use_colors)
+    refiner = nn.DataParallel(refiner)
     refiner.cuda()
 
     if opt.resume_posenet != '':
@@ -199,7 +198,7 @@ def main():
                     optimizer.step()
                     optimizer.zero_grad()
 
-                if batch_id != 0 and batch_id % (len(dataloader) // (4 * (old_batch_size if opt.old_batch_mode else 1))) == 0:
+                if batch_id != 0 and batch_id % (len(dataloader) // (40 * (old_batch_size if opt.old_batch_mode else 1))) == 0:
                     logger.info('Epoch {} | Batch {} | dis:{}'.format(epoch, batch_id, dis))
                     if opt.refine_start:
                         torch.save(refiner.state_dict(), '{0}/pose_refine_model_current.pth'.format(opt.outf))
@@ -217,31 +216,35 @@ def main():
         refiner.eval()
 
         trange = tqdm(enumerate(testdataloader), total=len(testdataloader), desc="testing")
-        for batch_id, data in trange:
 
-            end_points_cuda = {}
-            for k, v in end_points:
-                end_points_cuda[k] = Variable(v).cuda()
+        with torch.no_grad():
+            for batch_id, data in trange:
 
-            end_points = end_points_cuda
-            
-            #pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-            end_points = estimator(end_points)
+                end_points_cuda = {}
+                for k, v in end_points.items():
+                    end_points_cuda[k] = Variable(v).cuda()
 
-            #_, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, target, target_front, model_points, front, idx, points, opt.w, opt.refine_start)
-            _, dis, end_points = criterion(end_points, opt.w, opt.refine_start)
+                end_points = end_points_cuda
 
-            if opt.refine_start:
-                for ite in range(0, opt.iteration):
-                    #pred_r, pred_t = refiner(new_points, emb, idx)
-                    end_points = refiner(end_points, ite)
+                end_points = randla_processing(end_points)
+                
+                #pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
+                end_points = estimator(end_points)
 
-                    #loss, dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
-                    _, dis, end_points = criterion_refine(end_points, ite)
-            dis = dis.item()
-            test_dis += dis
-            trange.set_postfix(dis=dis)
-            test_count += 1
+                #_, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, target, target_front, model_points, front, idx, points, opt.w, opt.refine_start)
+                _, dis, end_points = criterion(end_points, opt.w, opt.refine_start)
+
+                if opt.refine_start:
+                    for ite in range(0, opt.iteration):
+                        #pred_r, pred_t = refiner(new_points, emb, idx)
+                        end_points = refiner(end_points, ite)
+
+                        #loss, dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
+                        _, dis, end_points = criterion_refine(end_points, ite)
+                dis = dis.item()
+                test_dis += dis
+                trange.set_postfix(dis=dis)
+                test_count += 1
 
         test_dis = test_dis / test_count
         logger.info('Epoch {} TEST FINISH Avg dis: {}'.format(epoch, test_dis))

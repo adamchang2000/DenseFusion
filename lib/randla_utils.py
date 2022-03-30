@@ -15,6 +15,8 @@ class ConfigRandLA:
     d_out = [32, 64]  # feature dimension
     num_sub_points = [num_points // 4, num_points // 16]
 
+    batch_norm = True
+
 def randla_processing(end_points):
     rndla_config = ConfigRandLA
     n_ds_layers = rndla_config.num_layers
@@ -23,7 +25,7 @@ def randla_processing(end_points):
     knn_local = KNN(k=rndla_config.k_n, transpose_mode=True)
     knn_interp = KNN(k=1, transpose_mode=True)
 
-    cld = end_points["cloud"]
+    cld = end_points["cloud"].clone().detach()
 
     #RANDLA NET STUFF
     # DownSample stage

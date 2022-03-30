@@ -435,11 +435,7 @@ class PoseDatasetAllObjects(PoseDataset):
             mask_depth = ma.getmaskarray(ma.masked_not_equal(depth, 0))
             mask_label = ma.getmaskarray(ma.masked_equal(label, itemid))
             mask = mask_label * mask_depth
-
-            mask = mask.astype(np.uint16) * 65535
-
-            cv2.imwrite("{0}_obj{1}_mask.png".format(index, itemid), mask)
-
+            
             if len(mask.nonzero()[0]) <= self.minimum_num_pt:
                 print("WARNING, NOT ENOUGH POINTS LABELED OBJECT {0} in FRAME {1}".format(itemid, color_filename))
                 continue
@@ -505,7 +501,11 @@ class PoseDatasetAllObjects(PoseDataset):
                 depth_mm = (depth * (1000 / cam_scale)).astype(np.uint16)
                 normals = compute_normals(depth_mm, cam_fx, cam_fy)
                 normals_masked = normals[rmin:rmax, cmin:cmax].reshape((-1, 3))[choose].astype(np.float32).squeeze(0)
-                cloud = np.hstack((cloud, normals_masked))
+
+            img_normalized = self.norm(torch.from_numpy(img_masked.astype(np.float32)))
+
+            if self.use_colors:
+                cloud_colors = img_normalized.view((3, -1)).transpose(0, 1)[choose]
 
             #return all model_points (no sampling), for evaluation
             model_points = self.cld[itemid]
@@ -516,12 +516,25 @@ class PoseDatasetAllObjects(PoseDataset):
             else:
                 target = np.add(target, target_t)
 
-            data_output.append(([torch.from_numpy(cloud.astype(np.float32)), \
-                torch.LongTensor(choose.astype(np.int32)), \
-                self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
-                torch.from_numpy(target.astype(np.float32)), \
-                torch.from_numpy(model_points.astype(np.float32)), \
-                torch.LongTensor([int(itemid) - 1])], (cam_fx, cam_fy, cam_cx, cam_cy)))
+            end_points = {}
+
+            end_points["cloud"] = torch.from_numpy(cloud.astype(np.float32))
+
+            if self.use_normals:
+                end_points["normals"] = torch.from_numpy(normals_masked.astype(np.float32))
+
+            if self.use_colors:
+                end_points["cloud_colors"] = cloud_colors
+
+            end_points["choose"] = torch.LongTensor(choose.astype(np.int32))
+            end_points["img"] = img_normalized
+            end_points["target"] = torch.from_numpy(target.astype(np.float32))
+            end_points["model_points"] = torch.from_numpy(model_points.astype(np.float32))
+            end_points["obj_idx"] = torch.LongTensor([int(obj[idx]) - 1])
+
+            end_points["intr"] = (cam_fx, cam_fy, cam_cx, cam_cy)
+
+            data_output.append(end_points)
 
         return data_output
 
@@ -599,10 +612,6 @@ class PoseDatasetPoseCNNResults(PoseDataset):
             mask_depth = ma.getmaskarray(ma.masked_not_equal(depth, 0))
             mask_label = ma.getmaskarray(ma.masked_equal(label, itemid))
             mask = mask_label * mask_depth
-
-            mask = mask.astype(np.uint16) * 65535
-
-            cv2.imwrite("{0}_obj{1}_mask.png".format(index, itemid), mask)
 
             if len(mask.nonzero()[0]) <= self.minimum_num_pt:
                 print("WARNING, NOT ENOUGH POINTS LABELED OBJECT {0} in FRAME {1}".format(itemid, color_filename))
