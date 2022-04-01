@@ -16,7 +16,6 @@ import pdb
 import torch.nn.functional as F
 from lib.pspnet import PSPNet
 from lib.RandLA.RandLANet import Network as RandLANet
-from lib.randla_utils import ConfigRandLA
 
 
 psp_models = {
@@ -127,13 +126,13 @@ class DenseFusion(nn.Module):
         return torch.cat([feat_1, feat_2, ap_x], 1) # 256 + 512 + 1024 = 1792
 
 class PoseNet(nn.Module):
-    def __init__(self, num_points, num_obj, use_normals, use_colors):
+    def __init__(self, cfg):
         super(PoseNet, self).__init__()
-        self.num_points = num_points
+        self.num_points = cfg.num_points
         self.cnn = ModifiedResnet()
         #self.feat = PoseNetFeat(num_points, use_normals)
 
-        self.df = DenseFusion(num_points)
+        self.df = DenseFusion(cfg.num_points)
         
         self.conv1_r = torch.nn.Conv1d(1792, 640, 1)
         self.conv1_t = torch.nn.Conv1d(1792, 640, 1)
@@ -147,17 +146,16 @@ class PoseNet(nn.Module):
         self.conv3_t = torch.nn.Conv1d(256, 128, 1)
         self.conv3_c = torch.nn.Conv1d(256, 128, 1)
 
-        self.conv4_r = torch.nn.Conv1d(128, num_obj*6, 1) #6d rot
-        self.conv4_t = torch.nn.Conv1d(128, num_obj*3, 1) #translation
-        self.conv4_c = torch.nn.Conv1d(128, num_obj*1, 1) #confidence
+        self.conv4_r = torch.nn.Conv1d(128, cfg.num_objects*6, 1) #6d rot
+        self.conv4_t = torch.nn.Conv1d(128, cfg.num_objects*3, 1) #translation
+        self.conv4_c = torch.nn.Conv1d(128, cfg.num_objects*1, 1) #confidence
 
-        self.num_obj = num_obj
+        self.num_obj = cfg.num_objects
 
-        rndla_config = ConfigRandLA
-        self.rndla = RandLANet(rndla_config)
+        self.rndla = RandLANet(cfg=cfg)
 
-        self.use_normals = use_normals
-        self.use_colors = use_colors
+        self.use_normals = cfg.use_normals
+        self.use_colors = cfg.use_colors
 
     def forward(self, end_points):
 
@@ -269,10 +267,10 @@ class PoseRefineNetFeat(nn.Module):
         return ap_x
 
 class PoseRefineNet(nn.Module):
-    def __init__(self, num_points, num_obj, use_normals, use_colors):
+    def __init__(self, cfg):
         super(PoseRefineNet, self).__init__()
-        self.num_points = num_points
-        self.feat = PoseRefineNetFeat(num_points, use_normals, use_colors)
+        self.num_points = cfg.num_points
+        self.feat = PoseRefineNetFeat(cfg.num_points, cfg.use_normals, cfg.use_colors)
         
         self.conv1_r = torch.nn.Linear(1024, 512)
         self.conv1_t = torch.nn.Linear(1024, 512)
@@ -280,10 +278,10 @@ class PoseRefineNet(nn.Module):
         self.conv2_r = torch.nn.Linear(512, 128)
         self.conv2_t = torch.nn.Linear(512, 128)
 
-        self.conv3_r = torch.nn.Linear(128, num_obj*6) #6d rot
-        self.conv3_t = torch.nn.Linear(128, num_obj*3) #translation
+        self.conv3_r = torch.nn.Linear(128, cfg.num_objects*6) #6d rot
+        self.conv3_t = torch.nn.Linear(128, cfg.num_objects*3) #translation
 
-        self.num_obj = num_obj
+        self.num_obj = cfg.num_objects
 
     def forward(self, end_points, refine_iteration):
 

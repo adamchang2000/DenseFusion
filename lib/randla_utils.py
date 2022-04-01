@@ -2,23 +2,8 @@ import torch
 import numpy as np
 from knn_cuda import KNN
 
-class ConfigRandLA:
-    k_n = 16  # KNN
-    num_layers = 2  # Number of layers
-    num_points = 1000  # Number of input points
-    num_classes = 22  # Number of valid classes
-    sub_grid_size = 0.06  # preprocess_parameter
-
-    in_c = 9
-
-    sub_sampling_ratio = [4, 4]  # sampling ratio of random sampling at each layer
-    d_out = [32, 64]  # feature dimension
-    num_sub_points = [num_points // 4, num_points // 16]
-
-    batch_norm = False
-
-def randla_processing(end_points):
-    rndla_config = ConfigRandLA
+def randla_processing(end_points, cfg):
+    rndla_config = cfg.rndla_cfg
     n_ds_layers = rndla_config.num_layers
     pcld_sub_s_r = rndla_config.sub_sampling_ratio
 
