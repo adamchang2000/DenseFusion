@@ -91,7 +91,7 @@ def main():
         os.mkdir(opt.output)
 
     estimator = PoseNet(num_points = num_points, num_obj = num_obj, use_normals = opt.use_normals, use_colors = opt.use_colors)
-    #estimator = nn.DataParallel(estimator)
+    estimator = nn.DataParallel(estimator)
     estimator.cuda()
     estimator.load_state_dict(torch.load(opt.model))
     estimator.eval()
@@ -106,7 +106,7 @@ def main():
     if opt.use_posecnn_rois:
         test_dataset = PoseDataset('test', num_points, False, opt.dataset_root, posecnn_results, 0.0, opt.refine_model != '', use_normals = opt.use_normals, use_colors = opt.use_colors)
     else:
-        test_dataset = PoseDataset('train', num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', use_normals = opt.use_normals, use_colors = opt.use_colors)
+        test_dataset = PoseDataset('test', num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', use_normals = opt.use_normals, use_colors = opt.use_colors)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=opt.workers)
 
     colors = [(96, 60, 20), (156, 39, 6), (212, 91, 18), (243, 188, 46), (95, 84, 38)]
@@ -133,23 +133,6 @@ def main():
                 end_points = end_points_cuda
 
                 end_points = randla_processing(end_points)
-
-                for k, v in end_points.items():
-                    if "RLA" not in k:
-                        continue
-
-                    if "xyz" not in k:
-                        continue
-
-                    print(k, v.shape)
-
-                    test_cld = v.detach().cpu().numpy().reshape((-1, 3))
-                    test_pcld = o3d.geometry.PointCloud()
-                    test_pcld.points = o3d.utility.Vector3dVector(test_cld)
-                    o3d.io.write_point_cloud(str(k) + "test.ply", test_pcld)
-
-
-                exit()
 
                 cam_fx, cam_fy, cam_cx, cam_cy = [x.item() for x in intr]
                                                                         

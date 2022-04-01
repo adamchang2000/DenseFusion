@@ -218,7 +218,7 @@ def main():
         trange = tqdm(enumerate(testdataloader), total=len(testdataloader), desc="testing")
 
         with torch.no_grad():
-            for batch_id, data in trange:
+            for batch_id, end_points in trange:
 
                 end_points_cuda = {}
                 for k, v in end_points.items():

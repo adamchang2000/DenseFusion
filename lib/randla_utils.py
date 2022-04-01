@@ -15,7 +15,7 @@ class ConfigRandLA:
     d_out = [32, 64]  # feature dimension
     num_sub_points = [num_points // 4, num_points // 16]
 
-    batch_norm = True
+    batch_norm = False
 
 def randla_processing(end_points):
     rndla_config = ConfigRandLA
