@@ -27,7 +27,7 @@ class Config(yaml.YAMLObject):
 
         self.old_batch_mode = False #old_batch_mode = accumulate gradients
         self.batch_size = 4
-        self.workers = 4
+        self.workers = 8
 
         self.decay_margin = 0.015
         self.refine_margin = 0.000015 #refine margin should be less than or equal to decay margin (want decay to trigger first)
