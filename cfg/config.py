@@ -49,6 +49,10 @@ class Config(yaml.YAMLObject):
 
         self.rndla_cfg = ConfigRandLA()
 
+        self.resnet = "resnet18"
+        self.pretrained_cnn = True #get pretrained Resnet18
+        self.pretrained_model_dir = "pretrained_models/"
+
 #dataset specific configs
 #currently, only YCB tested :) TODO: FIX LINEMOD AND CUSTOM
 #num_objects is number of types of objects in dataset

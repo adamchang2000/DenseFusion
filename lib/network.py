@@ -16,87 +16,88 @@ import pdb
 import torch.nn.functional as F
 from lib.pspnet import PSPNet
 from lib.RandLA.RandLANet import Network as RandLANet
+import lib.pytorch_utils as pt_utils
 
 
 psp_models = {
-    'resnet18': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=512, deep_features_size=256, backend='resnet18'),
-    'resnet34': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=512, deep_features_size=256, backend='resnet34'),
-    'resnet50': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=2048, deep_features_size=1024, backend='resnet50'),
-    'resnet101': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=2048, deep_features_size=1024, backend='resnet101'),
-    'resnet152': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=2048, deep_features_size=1024, backend='resnet152')
+    'resnet18': lambda cfg: PSPNet(cfg=cfg, sizes=(1, 2, 3, 6), psp_size=512, deep_features_size=256, backend='resnet18'),
+    'resnet34': lambda cfg: PSPNet(cfg=cfg, sizes=(1, 2, 3, 6), psp_size=512, deep_features_size=256, backend='resnet34'),
+    'resnet50': lambda cfg: PSPNet(cfg=cfg, sizes=(1, 2, 3, 6), psp_size=2048, deep_features_size=1024, backend='resnet50'),
+    'resnet101': lambda cfg: PSPNet(cfg=cfg, sizes=(1, 2, 3, 6), psp_size=2048, deep_features_size=1024, backend='resnet101'),
+    'resnet152': lambda cfg: PSPNet(cfg=cfg, sizes=(1, 2, 3, 6), psp_size=2048, deep_features_size=1024, backend='resnet152')
 }
 
 
 class ModifiedResnet(nn.Module):
 
-    def __init__(self, usegpu=True):
+    def __init__(self, cfg, usegpu=True):
         super(ModifiedResnet, self).__init__()
 
-        self.model = psp_models['resnet18'.lower()]()
+        self.model = psp_models[cfg.resnet.lower()](cfg)
 
     def forward(self, x):
         x = self.model(x)
         return x
 
-class PoseNetFeat(nn.Module):
-    def __init__(self, num_points, use_normals, use_colors):
-        super(PoseNetFeat, self).__init__()
+# class PoseNetFeat(nn.Module):
+#     def __init__(self, num_points, use_normals, use_colors):
+#         super(PoseNetFeat, self).__init__()
 
-        pcld_dim = 3
-        if use_normals:
-            pcld_dim += 3
+#         pcld_dim = 3
+#         if use_normals:
+#             pcld_dim += 3
 
-        self.conv1 = torch.nn.Conv1d(pcld_dim, 64, 1)
-        #self.bn1 = torch.nn.BatchNorm1d(64)
-        self.conv2 = torch.nn.Conv1d(64, 128, 1)
-        #self.bn2 = torch.nn.BatchNorm1d(128)
+#         self.conv1 = torch.nn.Conv1d(pcld_dim, 64, 1)
+#         #self.bn1 = torch.nn.BatchNorm1d(64)
+#         self.conv2 = torch.nn.Conv1d(64, 128, 1)
+#         #self.bn2 = torch.nn.BatchNorm1d(128)
 
-        self.e_conv1 = torch.nn.Conv1d(32, 64, 1)
-        #self.e_bn1 = torch.nn.BatchNorm1d(64)
-        self.e_conv2 = torch.nn.Conv1d(64, 128, 1)
-        #self.e_bn2 = torch.nn.BatchNorm1d(128)
+#         self.e_conv1 = torch.nn.Conv1d(32, 64, 1)
+#         #self.e_bn1 = torch.nn.BatchNorm1d(64)
+#         self.e_conv2 = torch.nn.Conv1d(64, 128, 1)
+#         #self.e_bn2 = torch.nn.BatchNorm1d(128)
 
-        self.conv5 = torch.nn.Conv1d(256, 512, 1)
-        #self.bn5 = torch.nn.BatchNorm1d(512)
-        self.conv6 = torch.nn.Conv1d(512, 1024, 1)
-        #self.bn6 = torch.nn.BatchNorm1d(1024)
+#         self.conv5 = torch.nn.Conv1d(256, 512, 1)
+#         #self.bn5 = torch.nn.BatchNorm1d(512)
+#         self.conv6 = torch.nn.Conv1d(512, 1024, 1)
+#         #self.bn6 = torch.nn.BatchNorm1d(1024)
 
-        self.ap1 = torch.nn.AvgPool1d(num_points)
-        self.num_points = num_points
-    def forward(self, x, emb):
+#         self.ap1 = torch.nn.AvgPool1d(num_points)
+#         self.num_points = num_points
+#     def forward(self, x, emb):
 
-        #"pointnet" layer
-        #XYZ -> 64 dim embedding
-        x = F.relu(self.conv1(x))
+#         #"pointnet" layer
+#         #XYZ -> 64 dim embedding
+#         x = F.relu(self.conv1(x))
 
-        #32 dim embedding -> 64 dim embedding
-        emb = F.relu(self.e_conv1(emb))
+#         #32 dim embedding -> 64 dim embedding
+#         emb = F.relu(self.e_conv1(emb))
 
-        #concating them
-        pointfeat_1 = torch.cat((x, emb), dim=1)
+#         #concating them
+#         pointfeat_1 = torch.cat((x, emb), dim=1)
 
-        #64 dim embedding -> 128 dim embedding
-        x = F.relu(self.conv2(x))
-        #64 dim embedding -> 128 dim embedding
-        emb = F.relu(self.e_conv2(emb))
+#         #64 dim embedding -> 128 dim embedding
+#         x = F.relu(self.conv2(x))
+#         #64 dim embedding -> 128 dim embedding
+#         emb = F.relu(self.e_conv2(emb))
 
-        #concating them
-        pointfeat_2 = torch.cat((x, emb), dim=1)
+#         #concating them
+#         pointfeat_2 = torch.cat((x, emb), dim=1)
 
-        #lifting fused 128 + 128 -> 512
-        x = F.relu(self.conv5(pointfeat_2))
+#         #lifting fused 128 + 128 -> 512
+#         x = F.relu(self.conv5(pointfeat_2))
 
-        #lifting fused 256 + 256 -> 1024
-        x = F.relu(self.conv6(x))
+#         #lifting fused 256 + 256 -> 1024
+#         x = F.relu(self.conv6(x))
 
-        #average pooling on into 1 1024 global feature
-        ap_x = self.ap1(x)
+#         #average pooling on into 1 1024 global feature
+#         ap_x = self.ap1(x)
 
-        #repeat it so they can staple it onto the back of every pixel/point
-        ap_x = ap_x.view(-1, 1024, 1).repeat(1, 1, self.num_points)
+#         #repeat it so they can staple it onto the back of every pixel/point
+#         ap_x = ap_x.view(-1, 1024, 1).repeat(1, 1, self.num_points)
 
-        #64 + 64 (level 1), 128 + 128 (level 2), 1024 global feature
-        return torch.cat([pointfeat_1, pointfeat_2, ap_x], 1) #128 + 256 + 1024
+#         #64 + 64 (level 1), 128 + 128 (level 2), 1024 global feature
+#         return torch.cat([pointfeat_1, pointfeat_2, ap_x], 1) #128 + 256 + 1024
 
 class DenseFusion(nn.Module):
     def __init__(self, num_points):
@@ -129,26 +130,30 @@ class PoseNet(nn.Module):
     def __init__(self, cfg):
         super(PoseNet, self).__init__()
         self.num_points = cfg.num_points
-        self.cnn = ModifiedResnet()
-        #self.feat = PoseNetFeat(num_points, use_normals)
+        self.cnn = ModifiedResnet(cfg)
 
         self.df = DenseFusion(cfg.num_points)
-        
-        self.conv1_r = torch.nn.Conv1d(1792, 640, 1)
-        self.conv1_t = torch.nn.Conv1d(1792, 640, 1)
-        self.conv1_c = torch.nn.Conv1d(1792, 640, 1)
 
-        self.conv2_r = torch.nn.Conv1d(640, 256, 1)
-        self.conv2_t = torch.nn.Conv1d(640, 256, 1)
-        self.conv2_c = torch.nn.Conv1d(640, 256, 1)
+        self.r_out = (pt_utils.Seq(1792)
+                    .conv1d(640, bn=cfg.batch_norm, activation=nn.ReLU())
+                    .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                    .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                    .conv1d(cfg.num_objects*6, bn=False, activation=None)
+        )
 
-        self.conv3_r = torch.nn.Conv1d(256, 128, 1)
-        self.conv3_t = torch.nn.Conv1d(256, 128, 1)
-        self.conv3_c = torch.nn.Conv1d(256, 128, 1)
+        self.t_out = (pt_utils.Seq(1792)
+                    .conv1d(640, bn=cfg.batch_norm, activation=nn.ReLU())
+                    .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                    .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                    .conv1d(cfg.num_objects*3, bn=False, activation=None)
+        )
 
-        self.conv4_r = torch.nn.Conv1d(128, cfg.num_objects*6, 1) #6d rot
-        self.conv4_t = torch.nn.Conv1d(128, cfg.num_objects*3, 1) #translation
-        self.conv4_c = torch.nn.Conv1d(128, cfg.num_objects*1, 1) #confidence
+        self.c_out = (pt_utils.Seq(1792)
+                    .conv1d(640, bn=cfg.batch_norm, activation=nn.ReLU())
+                    .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                    .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                    .conv1d(cfg.num_objects*1, bn=False, activation=None)
+        )
 
         self.num_obj = cfg.num_objects
 
@@ -185,23 +190,9 @@ class PoseNet(nn.Module):
         #emb is cnn embedding
         ap_x = self.df(emb, feat_x)
 
-        #ap_x = self.feat(x, emb)
-
-        rx = F.relu(self.conv1_r(ap_x))
-        tx = F.relu(self.conv1_t(ap_x))
-        cx = F.relu(self.conv1_c(ap_x))      
-
-        rx = F.relu(self.conv2_r(rx))
-        tx = F.relu(self.conv2_t(tx))
-        cx = F.relu(self.conv2_c(cx))
-
-        rx = F.relu(self.conv3_r(rx))
-        tx = F.relu(self.conv3_t(tx))
-        cx = F.relu(self.conv3_c(cx))
-
-        rx = self.conv4_r(rx).view(bs, self.num_obj, 6, self.num_points)
-        tx = self.conv4_t(tx).view(bs, self.num_obj, 3, self.num_points)
-        cx = torch.sigmoid(self.conv4_c(cx)).view(bs, self.num_obj, 1, self.num_points)
+        rx = self.r_out(ap_x).view(bs, self.num_obj, 6, self.num_points)
+        tx = self.t_out(ap_x).view(bs, self.num_obj, 3, self.num_points)
+        cx = torch.sigmoid(self.c_out(ap_x)).view(bs, self.num_obj, 1, self.num_points)
 
         obj = end_points["obj_idx"].unsqueeze(-1).unsqueeze(-1)
         obj_rx = obj.repeat(1, 1, rx.shape[2], rx.shape[3])
