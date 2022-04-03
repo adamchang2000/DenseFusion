@@ -47,6 +47,8 @@ class Config(yaml.YAMLObject):
 
         self.batch_norm = True #global batch norm switch
 
+        self.basic_fusion = True #perform a basic fusion (cat) of depth and cnn features instead of dense fusion
+
         self.rndla_cfg = ConfigRandLA()
 
         self.resnet = "resnet18"

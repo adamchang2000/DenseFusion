@@ -132,35 +132,57 @@ class PoseNet(nn.Module):
         self.num_points = cfg.num_points
         self.cnn = ModifiedResnet(cfg)
 
-        self.df = DenseFusion(cfg.num_points)
+        if not cfg.basic_fusion:
+            self.df = DenseFusion(cfg.num_points)
 
-        self.r_out = (pt_utils.Seq(1792)
-                    .conv1d(640, bn=cfg.batch_norm, activation=nn.ReLU())
-                    .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
-                    .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
-                    .conv1d(cfg.num_objects*6, bn=False, activation=None)
-        )
+        if cfg.basic_fusion:
+            self.r_out = (pt_utils.Seq(256)
+                        .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(cfg.num_objects*6, bn=False, activation=None)
+            )
 
-        self.t_out = (pt_utils.Seq(1792)
-                    .conv1d(640, bn=cfg.batch_norm, activation=nn.ReLU())
-                    .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
-                    .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
-                    .conv1d(cfg.num_objects*3, bn=False, activation=None)
-        )
+            self.t_out = (pt_utils.Seq(256)
+                        .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(cfg.num_objects*3, bn=False, activation=None)
+            )
 
-        self.c_out = (pt_utils.Seq(1792)
-                    .conv1d(640, bn=cfg.batch_norm, activation=nn.ReLU())
-                    .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
-                    .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
-                    .conv1d(cfg.num_objects*1, bn=False, activation=None)
-        )
+            self.c_out = (pt_utils.Seq(256)
+                        .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(cfg.num_objects*1, bn=False, activation=None)
+            )
+        else:
+            self.r_out = (pt_utils.Seq(1792)
+                        .conv1d(640, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(cfg.num_objects*6, bn=False, activation=None)
+            )
+
+            self.t_out = (pt_utils.Seq(1792)
+                        .conv1d(640, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(cfg.num_objects*3, bn=False, activation=None)
+            )
+
+            self.c_out = (pt_utils.Seq(1792)
+                        .conv1d(640, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(cfg.num_objects*1, bn=False, activation=None)
+            )
 
         self.num_obj = cfg.num_objects
 
         self.rndla = RandLANet(cfg=cfg)
 
-        self.use_normals = cfg.use_normals
-        self.use_colors = cfg.use_colors
+        self.cfg = cfg
 
     def forward(self, end_points):
 
@@ -174,11 +196,11 @@ class PoseNet(nn.Module):
 
         features = end_points["cloud"]
 
-        if self.use_normals:
+        if self.cfg.use_normals:
             normals = end_points["normals"]
             features = torch.cat((features, normals), dim=-1)
         
-        if self.use_colors:
+        if self.cfg.use_colors:
             colors = end_points["cloud_colors"]
             features = torch.cat((features, colors), dim=-1)
 
@@ -186,9 +208,10 @@ class PoseNet(nn.Module):
         end_points = self.rndla(end_points)
         feat_x = end_points["RLA_embeddings"]
 
-        #x is pointcloud
-        #emb is cnn embedding
-        ap_x = self.df(emb, feat_x)
+        if self.cfg.basic_fusion:
+            ap_x = torch.cat((emb, feat_x), dim=1)
+        else:
+            ap_x = self.df(emb, feat_x)
 
         rx = self.r_out(ap_x).view(bs, self.num_obj, 6, self.num_points)
         tx = self.t_out(ap_x).view(bs, self.num_obj, 3, self.num_points)
