@@ -10,8 +10,6 @@ class ConfigRandLA:
         self.num_classes = 22  # Number of valid classes
         self.sub_grid_size = 0.06  # preprocess_parameter
 
-        self.in_c = 9
-
         self.sub_sampling_ratio = [4, 4]  # sampling ratio of random sampling at each layer
         self.d_out = [32, 64]  # feature dimension
         self.num_sub_points = [self.num_points // 4, self.num_points // 16]
@@ -23,17 +21,17 @@ class Config(yaml.YAMLObject):
         self.nepoch = 25 #total number of epochs to train
 
         self.use_normals = True #use normals for pcld features
-        self.use_colors = True #use colors for pcld features
+        self.use_colors = False #use colors for pcld features
 
         self.old_batch_mode = False #old_batch_mode = accumulate gradients
         self.batch_size = 4
-        self.workers = 8
+        self.workers = 6
 
         self.decay_margin = 0.015
         self.refine_margin = 0.000015 #refine margin should be less than or equal to decay margin (want decay to trigger first)
         self.refine_epoch = 25 #epoch to start refining if refine margin isn't ever reached
 
-        self.lr = 0.0001
+        self.lr = 0.01
         self.lr_rate = 0.3 #lr decay at decay_margin
 
         self.w = 0.015
@@ -50,6 +48,9 @@ class Config(yaml.YAMLObject):
         self.basic_fusion = True #perform a basic fusion (cat) of depth and cnn features instead of dense fusion
 
         self.rndla_cfg = ConfigRandLA()
+
+        #one of ["pointnet", "pointnet2", "randlanet"]
+        self.pcld_encoder = "randlanet"
 
         self.resnet = "resnet18"
         self.pretrained_cnn = True #get pretrained Resnet18

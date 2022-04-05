@@ -332,15 +332,17 @@ class PoseDataset(data.Dataset):
         else:
             target_front = np.add(target_front, target_t)
 
-
-        img_normalized = self.norm(torch.from_numpy(img_masked.astype(np.float32)))
+        #[0-1]
+        img_normalized = img_masked.astype(np.float32) / 255.
+        img_normalized = self.norm(torch.from_numpy(img_normalized))
 
         if self.cfg.use_colors:
             cloud_colors = img_normalized.view((3, -1)).transpose(0, 1)[choose]
 
         end_points = {}
 
-        end_points["cloud"] = torch.from_numpy(cloud.astype(np.float32))
+        end_points["cloud_mean"] = torch.from_numpy(np.mean(cloud.astype(np.float32), axis=0, keepdims=True))
+        end_points["cloud"] = torch.from_numpy(cloud.astype(np.float32)) - end_points["cloud_mean"]
 
         if self.cfg.use_normals:
             end_points["normals"] = torch.from_numpy(normals_masked.astype(np.float32))

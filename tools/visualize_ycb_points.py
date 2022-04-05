@@ -24,6 +24,7 @@ from datasets.ycb.dataset import PoseDataset
 from lib.network import PoseNet, PoseRefineNet
 import cv2
 from lib.randla_utils import randla_processing
+from cfg.config import YCBConfig as Config, write_config
 
 try:
     from lib.tools import compute_rotation_matrix_from_ortho6d
@@ -35,17 +36,13 @@ import open3d as o3d
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir')
-parser.add_argument('--workers', type=int, default = 2, help='number of data loading workers')
 parser.add_argument('--model', type=str, default = '',  help='resume PoseNet model')
 parser.add_argument('--refine_model', type=str, default = '',  help='resume PoseRefineNet model')
 parser.add_argument('--output', type=str, default='visualization', help='output for point vis')
-parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
-parser.add_argument('--image_size', type=int, default=300, help="square side length of cropped image")
-parser.add_argument('--use_normals', action="store_true", default=False, help="estimate normals and augment pointcloud")
-parser.add_argument('--use_colors', action="store_true", default=False, help="add colors to pointcloud")
 parser.add_argument('--use_posecnn_rois', action="store_true", default=False, help="use the posecnn roi's")
 opt = parser.parse_args()
+
+cfg = Config()
 
 if opt.use_posecnn_rois:
     from datasets.ycb.dataset import PoseDatasetPoseCNNResults as PoseDataset
@@ -68,6 +65,7 @@ num_points = 1000
 num_points_mesh = 500
 iteration = 2
 batch_size = 1
+workers = 1
 
 posecnn_results = "YCB_Video_toolbox/results_PoseCNN_RSS2018"
 
@@ -90,7 +88,7 @@ def main():
     if not os.path.isdir(opt.output):
         os.mkdir(opt.output)
 
-    estimator = PoseNet(num_points = num_points, num_obj = num_obj, use_normals = opt.use_normals, use_colors = opt.use_colors)
+    estimator = PoseNet(cfg = cfg)
     estimator = nn.DataParallel(estimator)
     estimator.cuda()
     estimator.load_state_dict(torch.load(opt.model))
@@ -98,16 +96,16 @@ def main():
 
     
     if opt.refine_model != '':
-        refiner = PoseRefineNet(num_points = num_points, num_obj = num_obj, use_normals = opt.use_normals, use_colors = opt.use_colors)
+        refiner = PoseRefineNet(cfg = cfg)
         refiner.cuda()
         refiner.load_state_dict(torch.load(opt.refine_model))
         refiner.eval()
 
     if opt.use_posecnn_rois:
-        test_dataset = PoseDataset('test', num_points, False, opt.dataset_root, posecnn_results, 0.0, opt.refine_model != '', use_normals = opt.use_normals, use_colors = opt.use_colors)
+        test_dataset = PoseDataset('train', cfg = cfg)
     else:
-        test_dataset = PoseDataset('test', num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', use_normals = opt.use_normals, use_colors = opt.use_colors)
-    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=opt.workers)
+        test_dataset = PoseDataset('train', cfg = cfg)
+    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=workers)
 
     colors = [(96, 60, 20), (156, 39, 6), (212, 91, 18), (243, 188, 46), (95, 84, 38)]
 
@@ -117,7 +115,7 @@ def main():
 
             print("frame: {0}".format(now))
 
-            color_img_file = '{0}/{1}-color.png'.format(test_dataset.root, test_dataset.list[now])
+            color_img_file = '{0}/{1}-color.png'.format(cfg.root, test_dataset.list[now])
             color_img = cv2.imread(color_img_file)
 
             for obj_idx, end_points in enumerate(data_objs):
@@ -132,7 +130,7 @@ def main():
 
                 end_points = end_points_cuda
 
-                end_points = randla_processing(end_points)
+                end_points = randla_processing(end_points, cfg)
 
                 cam_fx, cam_fy, cam_cx, cam_cy = [x.item() for x in intr]
                                                                         
@@ -144,7 +142,7 @@ def main():
                 points = end_points["cloud"]
                 model_points = end_points["model_points"]
 
-                if opt.use_normals:
+                if cfg.use_normals:
                     normals = end_points["normals"]
 
                 bs, num_p, _ = pred_c.shape
@@ -161,7 +159,7 @@ def main():
                 my_t = (points + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
 
                 if opt.refine_model != "":
-                    for ite in range(0, opt.iteration):
+                    for ite in range(0, cfg.iteration):
                         T = Variable(torch.from_numpy(my_t.astype(np.float32))).cuda().view(1, 3).repeat(num_p, 1).contiguous().view(1, num_p, 3)
                         rot_mat = my_rot_mat
 
@@ -181,19 +179,13 @@ def main():
                         new_points = torch.bmm((points - T), R).contiguous()
                         end_points["new_points"] = new_points.detach()
 
-                        if opt.use_normals:
+                        if cfg.use_normals:
                             normals = normals.view(bs, num_p, 3)
                             new_normals = torch.bmm(normals, R).contiguous()
                             end_points["new_normals"] = new_normals.detach()
 
-
                         end_points = refiner(end_points, ite)
-                        torch.cuda.synchronize()
 
-                        next_pass_done = perf_counter()
-
-                        print("ref pass", next_pass_done - pass_done)
-                        pass_done = next_pass_done
 
                         pred_r = end_points["refiner_pred_r_" + str(ite)]
                         pred_t = end_points["refiner_pred_t_" + str(ite)]

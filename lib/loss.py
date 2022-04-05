@@ -24,7 +24,7 @@ def loss_calculation(end_points, w, refine, num_point_mesh, sym_list, use_normal
     target_front = end_points["target_front"]
     model_points = end_points["model_points"]
     front = end_points["front"]
-    points = end_points["cloud"]
+    points = end_points["cloud"] + end_points["cloud_mean"]
     idx = end_points["obj_idx"]
     
     if use_normals:
@@ -150,7 +150,8 @@ def loss_calculation(end_points, w, refine, num_point_mesh, sym_list, use_normal
     dis = torch.mean(dis)
 
     end_points["new_points"] = new_points.detach()
-    end_points["new_normals"] = new_normals.detach()
+    if use_normals:
+        end_points["new_normals"] = new_normals.detach()
     end_points["new_target"] = new_target.detach()
     end_points["new_target_front"] = new_target_front.detach()
 

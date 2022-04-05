@@ -133,14 +133,15 @@ def main():
 
                 end_points = end_points_cuda
 
-                end_points = randla_processing(end_points, cfg)
+                if cfg.pcld_encoder == "randlanet":
+                    end_points = randla_processing(end_points, cfg)
 
                 #pred_r, pred_t, pred_c, emb = estimator(end_points)
                 end_points = estimator(end_points)
 
                 #loss, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, end_points, opt.w, opt.refine_start)
                 loss, dis, end_points = criterion(end_points, cfg.w, cfg.refine_start)
-                
+
                 if cfg.refine_start:
                     for ite in range(0, cfg.iteration):
                         #pred_r, pred_t = refiner(new_points, emb, idx)
@@ -191,7 +192,8 @@ def main():
 
                 end_points = end_points_cuda
 
-                end_points = randla_processing(end_points, cfg)
+                if cfg.pcld_encoder == "randlanet":
+                    end_points = randla_processing(end_points, cfg)
                 
                 #pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
                 end_points = estimator(end_points)
