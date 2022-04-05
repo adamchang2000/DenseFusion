@@ -21,7 +21,7 @@ class Config(yaml.YAMLObject):
         self.nepoch = 25 #total number of epochs to train
 
         self.use_normals = True #use normals for pcld features
-        self.use_colors = False #use colors for pcld features
+        self.use_colors = True #use colors for pcld features
 
         self.old_batch_mode = False #old_batch_mode = accumulate gradients
         self.batch_size = 4
@@ -31,7 +31,7 @@ class Config(yaml.YAMLObject):
         self.refine_margin = 0.000015 #refine margin should be less than or equal to decay margin (want decay to trigger first)
         self.refine_epoch = 25 #epoch to start refining if refine margin isn't ever reached
 
-        self.lr = 0.01
+        self.lr = 0.0001
         self.lr_rate = 0.3 #lr decay at decay_margin
 
         self.w = 0.015
@@ -41,7 +41,7 @@ class Config(yaml.YAMLObject):
 
         self.symm_rotation_aug = False #add random rotation to GT around axis of symmetry
 
-        self.image_size = 150 #shrink or expand ROI's to allow bs > 1
+        self.image_size = 224 #shrink or expand ROI's to allow bs > 1
 
         self.batch_norm = True #global batch norm switch
 

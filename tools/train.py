@@ -32,6 +32,9 @@ from lib.utils import setup_logger
 from lib.randla_utils import randla_processing
 from cfg.config import YCBConfig as Config, write_config
 
+import faulthandler
+faulthandler.enable()
+
 from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
@@ -48,10 +51,10 @@ def main():
     torch.manual_seed(cfg.manualSeed)
 
     estimator = PoseNet(cfg = cfg)
-    estimator = nn.DataParallel(estimator)
+    #estimator = nn.DataParallel(estimator)
     estimator.cuda()
     refiner = PoseRefineNet(cfg = cfg)
-    refiner = nn.DataParallel(refiner)
+    #refiner = nn.DataParallel(refiner)
     refiner.cuda()
 
     if opt.resume_posenet != '':
@@ -110,6 +113,9 @@ def main():
     st_time = time.time()
 
     for epoch in range(opt.start_epoch, cfg.nepoch):
+
+        faulthandler.dump_traceback_later(90 * 60) #90 minutes (catch deadlock)
+
         write_config(cfg, os.path.join(cfg.log_dir, "config_current.yaml"))
         logger = setup_logger('epoch%d' % epoch, os.path.join(cfg.log_dir, 'epoch_%d_log.txt' % epoch))
         logger.info('Train time {0}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)) + ', ' + 'Training started'))
