@@ -27,16 +27,16 @@ class Network(nn.Module):
 
         self.decoder_blocks = nn.ModuleList()
         for j in range(self.config.num_layers):
-            if j < 1:
+            if j < self.config.num_layers - 1:
                 d_in = d_out + 2 * self.config.d_out[-j-2]
                 d_out = 2 * self.config.d_out[-j-2]
             else:
-                d_in = 4 * self.config.d_out[-2]
-                d_out = 2 * self.config.d_out[-2]
+                d_in = 4 * self.config.d_out[-(self.config.num_layers)]
+                d_out = 2 * self.config.d_out[-(self.config.num_layers)]
             self.decoder_blocks.append(pt_utils.Conv2d(d_in, d_out, kernel_size=(1,1), bn=cfg.batch_norm))
 
-        self.fc1 = pt_utils.Conv2d(d_out, 64, kernel_size=(1,1), bn=cfg.batch_norm)
-        self.fc2 = pt_utils.Conv2d(64, 128, kernel_size=(1,1), bn=cfg.batch_norm)
+        self.fc1 = pt_utils.Conv2d(d_out, 128, kernel_size=(1,1), bn=cfg.batch_norm)
+        self.fc2 = pt_utils.Conv2d(128, 128, kernel_size=(1,1), bn=cfg.batch_norm)
 
     def forward(self, end_points):
 

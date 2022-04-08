@@ -267,9 +267,6 @@ class PoseDataset(data.Dataset):
 
         add_t = np.random.uniform(-self.cfg.noise_trans, self.cfg.noise_trans, (self.cfg.num_points, 3))
 
-        normal_noise = np.abs(np.tan(self.cfg.noise_normals))
-        add_normal = np.random.uniform(-normal_noise, normal_noise, (self.cfg.num_points, 3))
-
         #right now, we are only dealing with one "front" axis
         front = np.expand_dims(self.frontd[obj_idx][0], 0) * .1
 
@@ -304,10 +301,6 @@ class PoseDataset(data.Dataset):
             depth_mm = (depth * (1000 / cam_scale)).astype(np.uint16)
             normals = compute_normals(depth_mm, cam_fx, cam_fy)
             normals_masked = normals[rmin:rmax, cmin:cmax].reshape((-1, 3))[choose].astype(np.float32).squeeze(0)
-
-            # if self.add_noise:
-            #     normals_masked = np.add(normals_masked, add_normal)
-            #     normals_masked /= np.linalg.norm(normals_masked, axis=1, keepdims=True)
 
         model_points = self.cld[obj_idx]
         if self.cfg.refine_start:

@@ -5,14 +5,14 @@ import sys
 class ConfigRandLA:
     def __init__(self):
         self.k_n = 16  # KNN
-        self.num_layers = 2  # Number of layers
-        self.num_points = 1000  # Number of input points
+        self.num_layers = 4  # Number of layers
+        self.num_points = 1024  # Number of input points
         self.num_classes = 22  # Number of valid classes
         self.sub_grid_size = 0.06  # preprocess_parameter
 
-        self.sub_sampling_ratio = [4, 4]  # sampling ratio of random sampling at each layer
-        self.d_out = [32, 64]  # feature dimension
-        self.num_sub_points = [self.num_points // 4, self.num_points // 16]
+        self.sub_sampling_ratio = [4, 4, 4, 4]  # sampling ratio of random sampling at each layer
+        self.d_out = [32, 64, 128, 256]  # feature dimension
+        self.num_sub_points = [self.num_points // 4, self.num_points // 16, self.num_points // 64, self.num_points // 256]
 
 class Config(yaml.YAMLObject):
 
@@ -24,7 +24,7 @@ class Config(yaml.YAMLObject):
         self.use_colors = True #use colors for pcld features
 
         self.old_batch_mode = False #old_batch_mode = accumulate gradients
-        self.batch_size = 4
+        self.batch_size = 6
         self.workers = 8
 
         self.decay_margin = 0.015
@@ -37,8 +37,7 @@ class Config(yaml.YAMLObject):
         self.w = 0.015
         self.w_rate = 0.3 #w decay at decay_margin
 
-        # self.noise_normals = 0 #amount of radians in XYZ directions added to normals
-        self.noise_trans = 0 #amount of XYZ noise added to each point independently
+        self.noise_trans = 0.002 #amount of XYZ noise added to each point independently
 
         self.add_front_aug = False #add random objects as occlusions
         self.symm_rotation_aug = False #add random rotation to GT around axis of symmetry
@@ -71,7 +70,7 @@ class YCBConfig(Config):
         self.root = "./datasets/ycb/YCB_Video_Dataset"
 
         self.num_objects = 21 #number of object classes in the dataset
-        self.num_points = 1000 #number of points on the input pointcloud
+        self.num_points = 1024 #number of points on the input pointcloud
         self.outf = 'trained_models/ycb' #folder to save trained models
         self.log_dir = 'experiments/logs/ycb' #folder to save logs
         self.repeat_epoch = 1 #number of repeat times for one epoch training
