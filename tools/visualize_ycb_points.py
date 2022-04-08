@@ -26,6 +26,8 @@ import cv2
 from lib.randla_utils import randla_processing
 from cfg.config import YCBConfig as Config, write_config
 
+from lib.loss import Loss
+
 try:
     from lib.tools import compute_rotation_matrix_from_ortho6d
 except:
@@ -89,7 +91,7 @@ def main():
         os.mkdir(opt.output)
 
     estimator = PoseNet(cfg = cfg)
-    estimator = nn.DataParallel(estimator)
+    # estimator = nn.DataParallel(estimator)
     estimator.cuda()
     estimator.load_state_dict(torch.load(opt.model))
     estimator.eval()
@@ -102,9 +104,9 @@ def main():
         refiner.eval()
 
     if opt.use_posecnn_rois:
-        test_dataset = PoseDataset('train', cfg = cfg)
+        test_dataset = PoseDataset('test', cfg = cfg)
     else:
-        test_dataset = PoseDataset('train', cfg = cfg)
+        test_dataset = PoseDataset('test', cfg = cfg)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=workers)
 
     colors = [(96, 60, 20), (156, 39, 6), (212, 91, 18), (243, 188, 46), (95, 84, 38)]
@@ -130,7 +132,8 @@ def main():
 
                 end_points = end_points_cuda
 
-                end_points = randla_processing(end_points, cfg)
+                if cfg.pcld_encoder == "randlanet":
+                    end_points = randla_processing(end_points, cfg)
 
                 cam_fx, cam_fy, cam_cx, cam_cy = [x.item() for x in intr]
                                                                         
@@ -139,7 +142,7 @@ def main():
                 pred_r = end_points["pred_r"]
                 pred_t = end_points["pred_t"]
                 pred_c = end_points["pred_c"]
-                points = end_points["cloud"]
+                points = end_points["cloud"] + end_points["cloud_mean"]
                 model_points = end_points["model_points"]
 
                 if cfg.use_normals:

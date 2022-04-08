@@ -31,6 +31,7 @@ from lib.loss_refiner import Loss_refine
 from lib.utils import setup_logger
 from lib.randla_utils import randla_processing
 from cfg.config import YCBConfig as Config, write_config
+from torch.optim.lr_scheduler import CyclicLR, CosineAnnealingLR, ExponentialLR
 
 import faulthandler
 faulthandler.enable()
@@ -51,10 +52,8 @@ def main():
     torch.manual_seed(cfg.manualSeed)
 
     estimator = PoseNet(cfg = cfg)
-    #estimator = nn.DataParallel(estimator)
     estimator.cuda()
     refiner = PoseRefineNet(cfg = cfg)
-    #refiner = nn.DataParallel(refiner)
     refiner.cuda()
 
     if opt.resume_posenet != '':
@@ -69,7 +68,6 @@ def main():
         refiner.load_state_dict(torch.load('{0}/{1}'.format(cfg.outf, opt.resume_refinenet)))
         cfg.refine_start = True
         cfg.decay_start = True
-        cfg.lr *= cfg.lr_rate
         cfg.w *= cfg.w_rate
         if cfg.old_batch_mode:
             old_batch_size = int(old_batch_size / cfg.iteration)
@@ -82,17 +80,9 @@ def main():
 
     if cfg.dataset == 'ycb':
         dataset = PoseDataset_ycb('train', cfg = cfg)
-    # elif opt.dataset == 'linemod':
-    #     dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
-    # elif opt.dataset == 'custom':
-    #     dataset = PoseDataset_custom('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start, opt.image_size, True)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.workers)
     if cfg.dataset == 'ycb':
         test_dataset = PoseDataset_ycb('test', cfg = cfg)
-    # elif opt.dataset == 'linemod':
-    #     test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
-    # elif opt.dataset == 'custom':
-    #     test_dataset = PoseDataset_custom('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start, opt.image_size, True)
     testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.workers)
     
     cfg.sym_list = dataset.get_sym_list()
@@ -102,6 +92,22 @@ def main():
 
     criterion = Loss(cfg.num_points_mesh, cfg.sym_list, cfg.use_normals)
     criterion_refine = Loss_refine(cfg.num_points_mesh, cfg.sym_list, cfg.use_normals)
+
+    if cfg.lr_scheduler == "cyclic":
+        clr_div = 6
+        lr_scheduler = CyclicLR(
+            optimizer, base_lr=1e-5, max_lr=3e-4,
+            cycle_momentum=False,
+            step_size_up=cfg.nepoch * (len(dataset) / cfg.batch_size) // clr_div,
+            step_size_down=cfg.nepoch * (len(dataset) / cfg.batch_size) // clr_div,
+            mode='triangular'
+        )
+    elif cfg.lr_scheduler == "cosine":
+        lr_scheduler = CosineAnnealingLR(optimizer, T_max=cfg.nepoch * (len(dataset) / cfg.batch_size))
+    elif cfg.lr_scheduler == "exponential":
+        lr_scheduler = ExponentialLR(optimizer, 0.9)
+    else:
+        lr_scheduler = None
 
     best_test = np.Inf
 
@@ -142,18 +148,14 @@ def main():
                 if cfg.pcld_encoder == "randlanet":
                     end_points = randla_processing(end_points, cfg)
 
-                #pred_r, pred_t, pred_c, emb = estimator(end_points)
                 end_points = estimator(end_points)
 
-                #loss, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, end_points, opt.w, opt.refine_start)
                 loss, dis, end_points = criterion(end_points, cfg.w, cfg.refine_start)
 
                 if cfg.refine_start:
                     for ite in range(0, cfg.iteration):
-                        #pred_r, pred_t = refiner(new_points, emb, idx)
                         end_points = refiner(end_points, ite)
 
-                        #loss, dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
                         loss, dis, end_points = criterion_refine(end_points, ite)
                         loss.backward()
                 else:
@@ -179,6 +181,8 @@ def main():
 
         print('>>>>>>>>----------epoch {0} train finish---------<<<<<<<<'.format(epoch))
 
+        if lr_scheduler:
+            lr_scheduler.step()
 
         logger = setup_logger('epoch%d_test' % epoch, os.path.join(cfg.log_dir, 'epoch_%d_test_log.txt' % epoch))
         logger.info('Test time {0}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)) + ', ' + 'Testing started'))
@@ -201,18 +205,14 @@ def main():
                 if cfg.pcld_encoder == "randlanet":
                     end_points = randla_processing(end_points, cfg)
                 
-                #pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
                 end_points = estimator(end_points)
 
-                #_, dis, new_points, new_target, new_target_front = criterion(pred_r, pred_t, pred_c, target, target_front, model_points, front, idx, points, opt.w, opt.refine_start)
                 _, dis, end_points = criterion(end_points, cfg.w, cfg.refine_start)
 
                 if cfg.refine_start:
                     for ite in range(0, cfg.iteration):
-                        #pred_r, pred_t = refiner(new_points, emb, idx)
                         end_points = refiner(end_points, ite)
 
-                        #loss, dis, new_points, new_target, new_target_front = criterion_refine(pred_r, pred_t, new_target, new_target_front, model_points, front, idx, new_points)
                         _, dis, end_points = criterion_refine(end_points, ite)
                 dis = dis.item()
                 test_dis += dis
@@ -232,7 +232,6 @@ def main():
         #REMOVE DECAY
         if best_test < cfg.decay_margin and not cfg.decay_start:
             cfg.decay_start = True
-            cfg.lr *= cfg.lr_rate
             cfg.w *= cfg.w_rate
             optimizer = optim.Adam(estimator.parameters(), lr=cfg.lr)
 
@@ -244,13 +243,9 @@ def main():
 
             if cfg.dataset == 'ycb':
                 dataset = PoseDataset_ycb('train', cfg = cfg)
-            # elif opt.dataset == 'linemod':
-            #     dataset = PoseDataset_linemod('train', opt.num_points, True, opt.dataset_root, opt.noise_trans, opt.refine_start)
             dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.workers)
             if cfg.dataset == 'ycb':
                 test_dataset = PoseDataset_ycb('test', cfg = cfg)
-            # elif opt.dataset == 'linemod':
-            #     test_dataset = PoseDataset_linemod('test', opt.num_points, False, opt.dataset_root, 0.0, opt.refine_start)
             testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.workers)
             
             cfg.sym_list = dataset.get_sym_list()

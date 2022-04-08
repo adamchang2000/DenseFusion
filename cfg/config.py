@@ -18,27 +18,29 @@ class Config(yaml.YAMLObject):
 
     def __init__(self):
         self.iteration = 2 #number of refine iterations
-        self.nepoch = 25 #total number of epochs to train
+        self.nepoch = 40 #total number of epochs to train
 
         self.use_normals = True #use normals for pcld features
         self.use_colors = True #use colors for pcld features
 
         self.old_batch_mode = False #old_batch_mode = accumulate gradients
         self.batch_size = 4
-        self.workers = 6
+        self.workers = 8
 
         self.decay_margin = 0.015
         self.refine_margin = 0.000015 #refine margin should be less than or equal to decay margin (want decay to trigger first)
-        self.refine_epoch = 25 #epoch to start refining if refine margin isn't ever reached
+        self.refine_epoch = 40 #epoch to start refining if refine margin isn't ever reached
 
         self.lr = 0.0001
-        self.lr_rate = 0.3 #lr decay at decay_margin
+        self.lr_scheduler = "exponential"
 
         self.w = 0.015
         self.w_rate = 0.3 #w decay at decay_margin
 
-        self.noise_trans = 0.01 #amount of XYZ noise added to projected depth image
+        # self.noise_normals = 0 #amount of radians in XYZ directions added to normals
+        self.noise_trans = 0 #amount of XYZ noise added to each point independently
 
+        self.add_front_aug = False #add random objects as occlusions
         self.symm_rotation_aug = False #add random rotation to GT around axis of symmetry
 
         self.image_size = 224 #shrink or expand ROI's to allow bs > 1
