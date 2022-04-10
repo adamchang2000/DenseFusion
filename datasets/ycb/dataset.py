@@ -167,7 +167,7 @@ class PoseDataset(data.Dataset):
         self.xmap = np.array([[j for i in range(640)] for j in range(480)])
         self.ymap = np.array([[i for i in range(640)] for j in range(480)])
         
-        self.trancolor = transforms.ColorJitter(0.2, 0.1, 0.1, 0.05)
+        self.trancolor = transforms.ColorJitter(0.2, 0.2, 0.2, 0.05)
         self.noise_img_loc = 0.0
         self.noise_img_scale = 7.0
         self.minimum_num_pt = 50
@@ -178,7 +178,7 @@ class PoseDataset(data.Dataset):
 
         print(len(self.list))
 
-    def get_item(self, index, idx, obj_idx, img, depth, label, meta):
+    def get_item(self, index, idx, obj_idx, img, depth, label, meta, return_intr=False, sample_model=True):
 
         if self.list[index][:8] != 'data_syn' and int(self.list[index][5:9]) >= 60:
             cam_cx = self.cam_cx_2
@@ -303,11 +303,12 @@ class PoseDataset(data.Dataset):
             normals_masked = normals[rmin:rmax, cmin:cmax].reshape((-1, 3))[choose].astype(np.float32).squeeze(0)
 
         model_points = self.cld[obj_idx]
-        if self.cfg.refine_start:
-            select_list = np.random.choice(len(model_points), self.num_pt_mesh_large, replace=False) # without replacement, so that it won't choice duplicate points
-        else:
-            select_list = np.random.choice(len(model_points), self.num_pt_mesh_small, replace=False) # without replacement, so that it won't choice duplicate points
-        model_points = model_points[select_list]
+        if sample_model:
+            if self.cfg.refine_start:
+                select_list = np.random.choice(len(model_points), self.num_pt_mesh_large, replace=False) # without replacement, so that it won't choice duplicate points
+            else:
+                select_list = np.random.choice(len(model_points), self.num_pt_mesh_small, replace=False) # without replacement, so that it won't choice duplicate points
+            model_points = model_points[select_list]
 
         target = np.dot(model_points, target_r.T)
         target = np.add(target, target_t)
@@ -340,6 +341,20 @@ class PoseDataset(data.Dataset):
         end_points["model_points"] = torch.from_numpy(model_points.astype(np.float32))
         end_points["front"] = torch.from_numpy(front.astype(np.float32))
         end_points["obj_idx"] = torch.LongTensor([int(obj_idx) - 1])
+
+        if return_intr:
+            if self.list[index][:8] != 'data_syn' and int(self.list[index][5:9]) >= 60:
+                cam_cx = self.cam_cx_2
+                cam_cy = self.cam_cy_2
+                cam_fx = self.cam_fx_2
+                cam_fy = self.cam_fy_2
+            else:
+                cam_cx = self.cam_cx_1
+                cam_cy = self.cam_cy_1
+                cam_fx = self.cam_fx_1
+                cam_fy = self.cam_fy_1
+
+            end_points["intr"] = (cam_fx, cam_fy, cam_cx, cam_cy)
 
         return end_points
 
@@ -396,7 +411,7 @@ class PoseDatasetAllObjects(PoseDataset):
             obj_idx = obj[idx]
             img = orig_img
 
-            end_points = self.get_item(index, idx, obj_idx, img, depth, label, meta)
+            end_points = self.get_item(index, idx, obj_idx, img, depth, label, meta, return_intr=True, sample_model=False)
 
             if end_points:
                 data_output.append(end_points)

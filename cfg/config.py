@@ -5,14 +5,14 @@ import sys
 class ConfigRandLA:
     def __init__(self):
         self.k_n = 16  # KNN
-        self.num_layers = 4  # Number of layers
+        self.num_layers = 3  # Number of layers
         self.num_points = 1024  # Number of input points
         self.num_classes = 22  # Number of valid classes
         self.sub_grid_size = 0.06  # preprocess_parameter
 
-        self.sub_sampling_ratio = [4, 4, 4, 4]  # sampling ratio of random sampling at each layer
-        self.d_out = [32, 64, 128, 256]  # feature dimension
-        self.num_sub_points = [self.num_points // 4, self.num_points // 16, self.num_points // 64, self.num_points // 256]
+        self.sub_sampling_ratio = [4, 4, 4]  # sampling ratio of random sampling at each layer
+        self.d_out = [32, 64, 128]  # feature dimension
+        self.num_sub_points = [self.num_points // 4, self.num_points // 16, self.num_points // 64]
 
 class Config(yaml.YAMLObject):
 
@@ -46,7 +46,7 @@ class Config(yaml.YAMLObject):
 
         self.batch_norm = True #global batch norm switch
 
-        self.basic_fusion = True #perform a basic fusion (cat) of depth and cnn features instead of dense fusion
+        self.basic_fusion = False #perform a basic fusion (cat) of depth and cnn features instead of dense fusion
 
         self.rndla_cfg = ConfigRandLA()
 

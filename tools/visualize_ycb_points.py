@@ -45,6 +45,7 @@ parser.add_argument('--use_posecnn_rois', action="store_true", default=False, he
 opt = parser.parse_args()
 
 cfg = Config()
+cfg.refine_start = opt.refine_model != ''
 
 if opt.use_posecnn_rois:
     from datasets.ycb.dataset import PoseDatasetPoseCNNResults as PoseDataset
