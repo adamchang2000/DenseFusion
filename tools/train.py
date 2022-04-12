@@ -90,7 +90,7 @@ def main():
 
     print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the training set: {0}\nlength of the testing set: {1}\nnumber of sample points on mesh: {2}\nsymmetry object list: {3}'.format(len(dataset), len(test_dataset), cfg.num_points_mesh, cfg.sym_list))
 
-    criterion = Loss(cfg.num_points_mesh, cfg.sym_list, cfg.use_normals)
+    criterion = Loss(cfg.num_points_mesh, cfg.sym_list, cfg.use_normals, cfg.use_confidence)
     criterion_refine = Loss_refine(cfg.num_points_mesh, cfg.sym_list, cfg.use_normals)
 
     if cfg.lr_scheduler == "cyclic":

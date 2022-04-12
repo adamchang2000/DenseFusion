@@ -142,25 +142,33 @@ def main():
 
                 pred_r = end_points["pred_r"]
                 pred_t = end_points["pred_t"]
-                pred_c = end_points["pred_c"]
                 points = end_points["cloud"] + end_points["cloud_mean"]
                 model_points = end_points["model_points"]
+
+                bs, num_p, _ = pred_t.shape
 
                 if cfg.use_normals:
                     normals = end_points["normals"]
 
-                bs, num_p, _ = pred_c.shape
-                pred_c = pred_c.view(bs, num_p)
-                how_max, which_max = torch.max(pred_c, 1)
-                pred_t = pred_t.view(bs * num_p, 1, 3)
+                if cfg.use_confidence:
+                    pred_c = end_points["pred_c"]
+                    pred_c = pred_c.view(bs, num_p)
+                    how_max, which_max = torch.max(pred_c, 1)
+                    pred_t = pred_t.view(bs * num_p, 1, 3)
 
-                my_r = pred_r[0][which_max[0]].view(-1).unsqueeze(0).unsqueeze(0)
+                    my_r = pred_r[0][which_max[0]].view(-1).unsqueeze(0).unsqueeze(0)
 
-                my_rot_mat = compute_rotation_matrix_from_ortho6d(my_r)[0].cpu().data.numpy()
+                    my_rot_mat = compute_rotation_matrix_from_ortho6d(my_r)[0].cpu().data.numpy()
 
-                points = points.contiguous().view(bs*num_p, 1, 3)
+                    points = points.contiguous().view(bs*num_p, 1, 3)
 
-                my_t = (points + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
+                    my_t = (points + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
+                else:
+
+                    my_r = torch.mean(pred_r, dim=1, keepdim=True)
+                    pred_t = points + pred_t
+                    my_t = torch.mean(pred_t, dim=1).view(-1).cpu().data.numpy()
+                    my_rot_mat = compute_rotation_matrix_from_ortho6d(my_r)[0].cpu().data.numpy()
 
                 if opt.refine_model != "":
                     for ite in range(0, cfg.iteration):
