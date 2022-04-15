@@ -359,29 +359,48 @@ class PoseNet(nn.Module):
 
         return end_points
  
+class DenseFusionRefine(nn.Module):
+    def __init__(self, num_points):
+        super(DenseFusionRefine, self).__init__()
+        self.conv2_rgb = torch.nn.Conv1d(128, 256, 1)
+        self.conv2_cld = torch.nn.Conv1d(128, 256, 1)
 
+        self.conv3 = torch.nn.Conv1d(256, 512, 1)
+        self.conv4 = torch.nn.Conv1d(512, 1024, 1)
+
+        self.ap1 = torch.nn.AvgPool1d(num_points)
+
+    def forward(self, rgb_emb, cld_emb):
+        bs, _, n_pts = cld_emb.size()
+        feat_1 = torch.cat((rgb_emb, cld_emb), dim=1)
+        rgb = F.relu(self.conv2_rgb(rgb_emb))
+        cld = F.relu(self.conv2_cld(cld_emb))
+
+        feat_2 = torch.cat((rgb, cld), dim=1)
+
+        rgbd = F.relu(self.conv3(feat_1))
+        rgbd = F.relu(self.conv4(rgbd))
+
+        ap_x = self.ap1(rgbd).view(-1, 1024, 1)
+
+        return ap_x
 
 class PoseRefineNetFeat(nn.Module):
-    def __init__(self, num_points, use_normals, use_colors):
+    def __init__(self, cfg):
         super(PoseRefineNetFeat, self).__init__()
 
-        pcld_dim = 3
-        if use_normals:
-            pcld_dim += 3
-        if use_colors:
-            pcld_dim += 3
+        pcld_dim = 3 + 3 * cfg.use_normals + 3 * cfg.use_colors
 
         self.conv1 = torch.nn.Conv1d(pcld_dim, 64, 1)
         self.conv2 = torch.nn.Conv1d(64, 128, 1)
 
-        self.e_conv1 = torch.nn.Conv1d(32, 64, 1)
+        self.e_conv1 = torch.nn.Conv1d(128, 64, 1)
         self.e_conv2 = torch.nn.Conv1d(64, 128, 1)
 
         self.conv5 = torch.nn.Conv1d(384, 512, 1)
         self.conv6 = torch.nn.Conv1d(512, 1024, 1)
 
-        self.ap1 = torch.nn.AvgPool1d(num_points)
-        self.num_points = num_points
+        self.ap1 = torch.nn.AvgPool1d(cfg.num_points)
 
     def forward(self, x, emb):
         x = F.relu(self.conv1(x))
@@ -399,45 +418,92 @@ class PoseRefineNetFeat(nn.Module):
 
         ap_x = self.ap1(x)
 
-        ap_x = ap_x.view(-1, 1024)
+        ap_x = ap_x.view(-1, 1024, 1)
         return ap_x
 
 class PoseRefineNet(nn.Module):
     def __init__(self, cfg):
         super(PoseRefineNet, self).__init__()
         self.num_points = cfg.num_points
-        self.feat = PoseRefineNetFeat(cfg.num_points, cfg.use_normals, cfg.use_colors)
-        
-        self.conv1_r = torch.nn.Linear(1024, 512)
-        self.conv1_t = torch.nn.Linear(1024, 512)
 
-        self.conv2_r = torch.nn.Linear(512, 128)
-        self.conv2_t = torch.nn.Linear(512, 128)
+        if cfg.pcld_encoder == "pointnet":
+            self.r_out = (pt_utils.Seq(1024)
+                        .conv1d(512, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(cfg.num_objects*6, bn=False, activation=None)
+            )
 
-        self.conv3_r = torch.nn.Linear(128, cfg.num_objects*6) #6d rot
-        self.conv3_t = torch.nn.Linear(128, cfg.num_objects*3) #translation
+            self.t_out = (pt_utils.Seq(1024)
+                        .conv1d(512, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(cfg.num_objects*3, bn=False, activation=None)
+            )
+        else:
+            self.r_out = (pt_utils.Seq(256)
+                            .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                            .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                            .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                            .conv1d(cfg.num_objects*6, bn=False, activation=None)
+                )
+
+            self.t_out = (pt_utils.Seq(256)
+                        .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(cfg.num_objects*3, bn=False, activation=None)
+            )
 
         self.num_obj = cfg.num_objects
 
-    def forward(self, end_points, refine_iteration):
+        if cfg.pcld_encoder == "pointnet":
+            self.feat = PoseRefineNetFeat(cfg)
+        elif cfg.pcld_encoder == "randlanet":
+            self.rndla = RandLANet(cfg=cfg)
+        elif cfg.pcld_encoder == "pointnet2":
+            self.pointnet2 = Pointnet2MSG(input_channels=3*cfg.use_normals + 3*cfg.use_colors, bn=cfg.batch_norm)
+        else:
+            raise RuntimeError("invalid pcld encoder " + str(cfg.pcld_encoder))
 
-        x = end_points["new_points"]
+        self.cfg = cfg
+        self.ap1 = torch.nn.AvgPool1d(cfg.num_points)
+
+    def forward(self, end_points, refine_iteration):
         emb = end_points["emb"]
         obj = end_points["obj_idx"]
 
-        bs = x.size()[0]
+        bs = obj.size()[0]
+
+        features = end_points["new_points"]
+
+        if self.cfg.use_normals:
+            normals = end_points["new_normals"]
+            features = torch.cat((features, normals), dim=-1)
         
-        x = x.transpose(2, 1).contiguous()
-        ap_x = self.feat(x, emb)
+        if self.cfg.use_colors:
+            colors = end_points["cloud_colors"]
+            features = torch.cat((features, colors), dim=-1)
 
-        rx = F.relu(self.conv1_r(ap_x))
-        tx = F.relu(self.conv1_t(ap_x))   
+        if self.cfg.pcld_encoder == "randlanet":
+            end_points["RLA_features"] = features.transpose(1, 2)
+            end_points = self.rndla(end_points)
+            feat_x = end_points["RLA_embeddings"]
+            ap_x = torch.cat((emb, feat_x), dim=1)
+            ap_x = self.ap1(ap_x)
+        elif self.cfg.pcld_encoder == "pointnet2":
+            pcld = features
+            feat_x = self.pointnet2(pcld)
+            ap_x = torch.cat((emb, feat_x), dim=1)
+            ap_x = self.ap1(ap_x)
+        else:
+            feat_x = features.transpose(1, 2)
+            ap_x = self.feat(feat_x, emb)
 
-        rx = F.relu(self.conv2_r(rx))
-        tx = F.relu(self.conv2_t(tx))
+        print(ap_x.shape)
 
-        rx = self.conv3_r(rx).view(bs, self.num_obj, 6, 1)
-        tx = self.conv3_t(tx).view(bs, self.num_obj, 3, 1)
+        rx = self.r_out(ap_x).view(bs, self.num_obj, 6, 1)
+        tx = self.t_out(ap_x).view(bs, self.num_obj, 3, 1)
 
         obj = obj.unsqueeze(-1).unsqueeze(-1)
         obj_rx = obj.repeat(1, 1, rx.shape[2], rx.shape[3])

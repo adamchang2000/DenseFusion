@@ -70,7 +70,7 @@ iteration = 2
 batch_size = 1
 workers = 1
 
-posecnn_results = "YCB_Video_toolbox/results_PoseCNN_RSS2018"
+cfg.posecnn_results = "YCB_Video_toolbox/results_PoseCNN_RSS2018"
 
 def get_pointcloud(model_points, t, rot_mat):
 

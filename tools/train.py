@@ -65,6 +65,7 @@ def main():
         cfg.image_size = -1
 
     if opt.resume_refinenet != '':
+        print("performing refiner training!")
         refiner.load_state_dict(torch.load('{0}/{1}'.format(cfg.outf, opt.resume_refinenet)))
         cfg.refine_start = True
         cfg.decay_start = True
@@ -76,7 +77,6 @@ def main():
         cfg.refine_start = False
         cfg.decay_start = False
         optimizer = optim.Adam(estimator.parameters(), lr=cfg.lr)
-
 
     if cfg.dataset == 'ycb':
         dataset = PoseDataset_ycb('train', cfg = cfg)
@@ -229,7 +229,6 @@ def main():
                 torch.save(estimator.state_dict(), '{0}/pose_model_{1}_{2}.pth'.format(cfg.outf, epoch, test_dis))
             print(epoch, '>>>>>>>>----------BEST TEST MODEL SAVED---------<<<<<<<<')
 
-        #REMOVE DECAY
         if best_test < cfg.decay_margin and not cfg.decay_start:
             cfg.decay_start = True
             cfg.w *= cfg.w_rate
@@ -253,7 +252,7 @@ def main():
 
             print('>>>>>>>>----------Dataset loaded!---------<<<<<<<<\nlength of the training set: {0}\nlength of the testing set: {1}\nnumber of sample points on mesh: {2}\nsymmetry object list: {3}'.format(len(dataset), len(test_dataset), cfg.num_points_mesh, cfg.sym_list))
 
-            criterion = Loss(cfg.num_points_mesh, cfg.sym_list, cfg.use_normals)
+            criterion = Loss(cfg.num_points_mesh, cfg.sym_list, cfg.use_normals, cfg.use_confidence)
             criterion_refine = Loss_refine(cfg.num_points_mesh, cfg.sym_list, cfg.use_normals)
 
 if __name__ == '__main__':

@@ -19,8 +19,8 @@ class Config(yaml.YAMLObject):
         self.iteration = 2 #number of refine iterations
         self.nepoch = 40 #total number of epochs to train
 
-        self.use_normals = True #use normals for pcld features
-        self.use_colors = True #use colors for pcld features
+        self.use_normals = False #use normals for pcld features
+        self.use_colors = False #use colors for pcld features
 
         self.old_batch_mode = False #old_batch_mode = accumulate gradients
         self.batch_size = 6
@@ -28,7 +28,7 @@ class Config(yaml.YAMLObject):
 
         self.decay_margin = 0.015
         self.refine_margin = 0.000015 #refine margin should be less than or equal to decay margin (want decay to trigger first)
-        self.refine_epoch = 40 #epoch to start refining if refine margin isn't ever reached
+        self.refine_epoch = 20 #epoch to start refining if refine margin isn't ever reached
 
         self.lr = 0.0001
         self.lr_scheduler = "exponential"
@@ -43,20 +43,24 @@ class Config(yaml.YAMLObject):
 
         self.image_size = 224 #shrink or expand ROI's to allow bs > 1
 
-        self.batch_norm = True #global batch norm switch
+        self.batch_norm = False #global batch norm switch
 
         self.basic_fusion = False #perform a basic fusion (cat) of depth and cnn features instead of dense fusion
 
         self.rndla_cfg = ConfigRandLA()
 
         #one of ["pointnet", "pointnet2", "randlanet"]
-        self.pcld_encoder = "randlanet"
+        self.pcld_encoder = "pointnet"
 
         self.resnet = "resnet18"
-        self.pretrained_cnn = True #get pretrained Resnet18
+        self.pretrained_cnn = False #get pretrained Resnet18
         self.pretrained_model_dir = "pretrained_models/"
 
-        self.use_confidence = False #use confidence regression vs. standard voting
+        self.use_confidence = True #use confidence regression vs. standard voting
+
+        self.fill_depth = True #use hole filling algorithm to fill depth in 2D
+
+        self.blur_depth = False #run a gaussian kernel over depth map in 2D after fill_depth (probably shouldn't since fill depth already has a blur)
 
 #dataset specific configs
 #currently, only YCB tested :) TODO: FIX LINEMOD AND CUSTOM

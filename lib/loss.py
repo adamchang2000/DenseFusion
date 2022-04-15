@@ -126,9 +126,10 @@ def loss_calculation(end_points, w, refine, num_point_mesh, sym_list, use_normal
         loss = torch.sum(torch.mean(((dis + FRONT_LOSS_COEFF * front_dis)), dim=1))
 
         ori_t = ori_t.view(bs, num_p, 1, 3)
+        points = points.view(bs, num_p, 1, 3)
         ori_base = ori_base.view(bs, num_p, 3, 3)
 
-        ori_t = torch.mean(ori_t, dim=1, keepdim=True)
+        ori_t = torch.mean(ori_t + points, dim=1, keepdim=True)
         ori_base = torch.mean(ori_base, dim=1).view(bs, 3, 3).contiguous()
 
         t = ori_t.contiguous()

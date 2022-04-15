@@ -14,7 +14,7 @@ import copy
 import scipy.misc
 import scipy.io as scio
 import open3d as o3d
-from lib.depth_utils import compute_normals
+from lib.depth_utils import compute_normals, fill_missing
 import cv2
 
 def standardize_image_size(target_image_size, rmin, rmax, cmin, cmax, image_height, image_width):
@@ -180,6 +180,14 @@ class PoseDataset(data.Dataset):
 
     def get_item(self, index, idx, obj_idx, img, depth, label, meta, return_intr=False, sample_model=True):
 
+        cam_scale = meta['factor_depth'][0][0]
+
+        if self.cfg.fill_depth:
+            depth = fill_missing(depth, cam_scale, 1)
+
+        if self.cfg.blur_depth:
+            depth = cv2.GaussianBlur(depth,(3,3),cv2.BORDER_DEFAULT)
+
         if self.list[index][:8] != 'data_syn' and int(self.list[index][5:9]) >= 60:
             cam_cx = self.cam_cx_2
             cam_cy = self.cam_cy_2
@@ -265,8 +273,6 @@ class PoseDataset(data.Dataset):
         target_r = meta['poses'][:, :, idx][:, 0:3]
         target_t = np.array([meta['poses'][:, :, idx][:, 3:4].flatten()])
 
-        add_t = np.random.uniform(-self.cfg.noise_trans, self.cfg.noise_trans, (self.cfg.num_points, 3))
-
         #right now, we are only dealing with one "front" axis
         front = np.expand_dims(self.frontd[obj_idx][0], 0) * .1
 
@@ -281,9 +287,6 @@ class PoseDataset(data.Dataset):
                 symmetry_augmentation = get_random_rotation_around_symmetry_axis(front, symm_type, num_symm)
                 target_r = target_r @ symmetry_augmentation
 
-
-        cam_scale = meta['factor_depth'][0][0]
-
         depth_masked = depth[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         xmap_masked = self.xmap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         ymap_masked = self.ymap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
@@ -293,7 +296,8 @@ class PoseDataset(data.Dataset):
         pt0 = (ymap_masked - cam_cx) * pt2 / cam_fx
         pt1 = (xmap_masked - cam_cy) * pt2 / cam_fy
         cloud = np.concatenate((pt0, pt1, pt2), axis=1)
-        if self.add_noise:
+        if self.add_noise and self.cfg.noise_trans > 0:
+            add_t = np.random.uniform(-self.cfg.noise_trans, self.cfg.noise_trans, (self.cfg.num_points, 3))
             cloud = np.add(cloud, add_t)
 
         #NORMALS
