@@ -24,7 +24,7 @@ class Config(yaml.YAMLObject):
 
         self.old_batch_mode = True #old_batch_mode = accumulate gradients
         self.batch_size = 6
-        self.workers = 1
+        self.workers = 8
 
         self.decay_margin = 0.015
         self.refine_margin = 0.000015 #refine margin should be less than or equal to decay margin (want decay to trigger first)
@@ -36,7 +36,7 @@ class Config(yaml.YAMLObject):
         self.w = 0.015
         self.w_rate = 0.3 #w decay at decay_margin
 
-        self.noise_trans = 0 #amount of XYZ noise added to each point independently
+        self.noise_trans = 0.001 #amount of XYZ noise added to each point independently
 
         self.add_front_aug = False #add random objects as occlusions
         self.symm_rotation_aug = False #add random rotation to GT around axis of symmetry
@@ -46,12 +46,12 @@ class Config(yaml.YAMLObject):
         self.batch_norm = False #global batch norm switch
 
         #DO NOT USE BASIC FUSION WITH POINTNET, since the DenseFusion is the pointnet
-        self.basic_fusion = True #perform a basic fusion (cat) of depth and cnn features instead of dense fusion
+        self.basic_fusion = False #perform a basic fusion (cat) of depth and cnn features instead of dense fusion
 
         self.rndla_cfg = ConfigRandLA()
 
         #one of ["pointnet", "pointnet2", "randlanet"]
-        self.pcld_encoder = "randlanet"
+        self.pcld_encoder = "pointnet"
 
         self.resnet = "resnet18"
         self.pretrained_cnn = False #get pretrained Resnet18
