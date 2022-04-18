@@ -156,18 +156,19 @@ class Pointnet2MSG(nn.Module):
         return l_features[0]
 
 class PoseNetFeat(nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, cfg, pcld_dim = None):
         super(PoseNetFeat, self).__init__()
 
-        pcld_dim = 3 + 3 * cfg.use_normals + 3 * cfg.use_colors
+        if not pcld_dim:
+            pcld_dim = 3 + 3 * cfg.use_normals + 3 * cfg.use_colors
 
-        self.conv1 = torch.nn.Conv1d(pcld_dim, 128, 1)
-        self.conv2 = torch.nn.Conv1d(128, 256, 1)
+        self.conv1 = torch.nn.Conv1d(pcld_dim, 64, 1)
+        self.conv2 = torch.nn.Conv1d(64, 128, 1)
 
-        self.e_conv1 = torch.nn.Conv1d(128, 128, 1)
-        self.e_conv2 = torch.nn.Conv1d(128, 256, 1)
+        self.e_conv1 = torch.nn.Conv1d(32, 64, 1)
+        self.e_conv2 = torch.nn.Conv1d(64, 128, 1)
 
-        self.conv5 = torch.nn.Conv1d(512, 512, 1)
+        self.conv5 = torch.nn.Conv1d(256, 512, 1)
         self.conv6 = torch.nn.Conv1d(512, 1024, 1)
 
         self.ap1 = torch.nn.AvgPool1d(cfg.num_points)
@@ -202,33 +203,6 @@ class PoseNetFeat(nn.Module):
         #64 + 64 (level 1), 128 + 128 (level 2), 1024 global feature
         return torch.cat([pointfeat_1, pointfeat_2, ap_x], 1) #256 + 512 + 1024
 
-class DenseFusion(nn.Module):
-    def __init__(self, num_points):
-        super(DenseFusion, self).__init__()
-        self.conv2_rgb = torch.nn.Conv1d(128, 256, 1)
-        self.conv2_cld = torch.nn.Conv1d(128, 256, 1)
-
-        self.conv3 = torch.nn.Conv1d(256, 512, 1)
-        self.conv4 = torch.nn.Conv1d(512, 1024, 1)
-
-        self.ap1 = torch.nn.AvgPool1d(num_points)
-
-    def forward(self, rgb_emb, cld_emb):
-        bs, _, n_pts = cld_emb.size()
-        feat_1 = torch.cat((rgb_emb, cld_emb), dim=1)
-        rgb = F.relu(self.conv2_rgb(rgb_emb))
-        cld = F.relu(self.conv2_cld(cld_emb))
-
-        feat_2 = torch.cat((rgb, cld), dim=1)
-
-        rgbd = F.relu(self.conv3(feat_1))
-        rgbd = F.relu(self.conv4(rgbd))
-
-        ap_x = self.ap1(rgbd)
-
-        ap_x = ap_x.view(-1, 1024, 1).repeat(1, 1, n_pts)
-        return torch.cat([feat_1, feat_2, ap_x], 1) # 256 + 512 + 1024 = 1792
-
 class PoseNet(nn.Module):
     def __init__(self, cfg):
         super(PoseNet, self).__init__()
@@ -258,14 +232,14 @@ class PoseNet(nn.Module):
                             .conv1d(cfg.num_objects*1, bn=False, activation=None)
                 )
         else:
-            self.r_out = (pt_utils.Seq(1792)
+            self.r_out = (pt_utils.Seq(1408)
                         .conv1d(640, bn=cfg.batch_norm, activation=nn.ReLU())
                         .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
                         .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
                         .conv1d(cfg.num_objects*6, bn=False, activation=None)
             )
 
-            self.t_out = (pt_utils.Seq(1792)
+            self.t_out = (pt_utils.Seq(1408)
                         .conv1d(640, bn=cfg.batch_norm, activation=nn.ReLU())
                         .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
                         .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
@@ -273,7 +247,7 @@ class PoseNet(nn.Module):
             )
 
             if cfg.use_confidence:
-                self.c_out = (pt_utils.Seq(1792)
+                self.c_out = (pt_utils.Seq(1408)
                             .conv1d(640, bn=cfg.batch_norm, activation=nn.ReLU())
                             .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
                             .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
@@ -286,14 +260,19 @@ class PoseNet(nn.Module):
             self.df = PoseNetFeat(cfg)
         elif cfg.pcld_encoder == "randlanet":
             self.rndla = RandLANet(cfg=cfg)
-            self.df = DenseFusion(cfg.num_points)
+            self.df = PoseNetFeat(cfg, pcld_dim=128)
         elif cfg.pcld_encoder == "pointnet2":
             self.pointnet2 = Pointnet2MSG(input_channels=3*cfg.use_normals + 3*cfg.use_colors, bn=cfg.batch_norm)
-            self.df = DenseFusion(cfg.num_points)
+            self.df = PoseNetFeat(cfg, pcld_dim=128)
         else:
             raise RuntimeError("invalid pcld encoder " + str(cfg.pcld_encoder))
 
         self.cfg = cfg
+
+        if self.cfg.basic_fusion:
+            self.emb_basic = (pt_utils.Seq(32)
+                        .conv1d(64, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU()))
 
     def forward(self, end_points):
         out_img = self.cnn(end_points["img"])
@@ -322,9 +301,10 @@ class PoseNet(nn.Module):
             pcld = features
             feat_x = self.pointnet2(pcld)
         else:
-            feat_x = features.transpose(1, 2)
+            feat_x = features.transpose(1, 2).contiguous()
 
         if self.cfg.basic_fusion:
+            emb = self.emb_basic(emb)
             ap_x = torch.cat((emb, feat_x), dim=1)
         else:
             ap_x = self.df(emb, feat_x)
@@ -359,42 +339,17 @@ class PoseNet(nn.Module):
 
         return end_points
  
-class DenseFusionRefine(nn.Module):
-    def __init__(self, num_points):
-        super(DenseFusionRefine, self).__init__()
-        self.conv2_rgb = torch.nn.Conv1d(128, 256, 1)
-        self.conv2_cld = torch.nn.Conv1d(128, 256, 1)
-
-        self.conv3 = torch.nn.Conv1d(256, 512, 1)
-        self.conv4 = torch.nn.Conv1d(512, 1024, 1)
-
-        self.ap1 = torch.nn.AvgPool1d(num_points)
-
-    def forward(self, rgb_emb, cld_emb):
-        bs, _, n_pts = cld_emb.size()
-        feat_1 = torch.cat((rgb_emb, cld_emb), dim=1)
-        rgb = F.relu(self.conv2_rgb(rgb_emb))
-        cld = F.relu(self.conv2_cld(cld_emb))
-
-        feat_2 = torch.cat((rgb, cld), dim=1)
-
-        rgbd = F.relu(self.conv3(feat_1))
-        rgbd = F.relu(self.conv4(rgbd))
-
-        ap_x = self.ap1(rgbd).view(-1, 1024, 1)
-
-        return ap_x
-
 class PoseRefineNetFeat(nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, cfg, pcld_dim=None):
         super(PoseRefineNetFeat, self).__init__()
 
-        pcld_dim = 3 + 3 * cfg.use_normals + 3 * cfg.use_colors
+        if not pcld_dim:
+            pcld_dim = 3 + 3 * cfg.use_normals + 3 * cfg.use_colors
 
         self.conv1 = torch.nn.Conv1d(pcld_dim, 64, 1)
         self.conv2 = torch.nn.Conv1d(64, 128, 1)
 
-        self.e_conv1 = torch.nn.Conv1d(128, 64, 1)
+        self.e_conv1 = torch.nn.Conv1d(32, 64, 1)
         self.e_conv2 = torch.nn.Conv1d(64, 128, 1)
 
         self.conv5 = torch.nn.Conv1d(384, 512, 1)
@@ -426,21 +381,7 @@ class PoseRefineNet(nn.Module):
         super(PoseRefineNet, self).__init__()
         self.num_points = cfg.num_points
 
-        if cfg.pcld_encoder == "pointnet":
-            self.r_out = (pt_utils.Seq(1024)
-                        .conv1d(512, bn=cfg.batch_norm, activation=nn.ReLU())
-                        .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
-                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
-                        .conv1d(cfg.num_objects*6, bn=False, activation=None)
-            )
-
-            self.t_out = (pt_utils.Seq(1024)
-                        .conv1d(512, bn=cfg.batch_norm, activation=nn.ReLU())
-                        .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
-                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
-                        .conv1d(cfg.num_objects*3, bn=False, activation=None)
-            )
-        else:
+        if cfg.basic_fusion:
             self.r_out = (pt_utils.Seq(256)
                             .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
                             .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
@@ -454,6 +395,21 @@ class PoseRefineNet(nn.Module):
                         .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
                         .conv1d(cfg.num_objects*3, bn=False, activation=None)
             )
+        else:
+            self.r_out = (pt_utils.Seq(1024)
+                        .conv1d(512, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(cfg.num_objects*6, bn=False, activation=None)
+            )
+
+            self.t_out = (pt_utils.Seq(1024)
+                        .conv1d(512, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(256, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(128, bn=cfg.batch_norm, activation=nn.ReLU())
+                        .conv1d(cfg.num_objects*3, bn=False, activation=None)
+            )
+            
 
         self.num_obj = cfg.num_objects
 
@@ -461,13 +417,17 @@ class PoseRefineNet(nn.Module):
             self.feat = PoseRefineNetFeat(cfg)
         elif cfg.pcld_encoder == "randlanet":
             self.rndla = RandLANet(cfg=cfg)
+            self.feat = PoseRefineNetFeat(cfg, pcld_dim=128)
         elif cfg.pcld_encoder == "pointnet2":
             self.pointnet2 = Pointnet2MSG(input_channels=3*cfg.use_normals + 3*cfg.use_colors, bn=cfg.batch_norm)
+            self.feat = PoseRefineNetFeat(cfg, pcld_dim=128)
         else:
             raise RuntimeError("invalid pcld encoder " + str(cfg.pcld_encoder))
 
         self.cfg = cfg
-        self.ap1 = torch.nn.AvgPool1d(cfg.num_points)
+
+        if self.cfg.basic_fusion:
+            self.ap1 = torch.nn.AvgPool1d(cfg.num_points)
 
     def forward(self, end_points, refine_iteration):
         emb = end_points["emb"]
@@ -489,18 +449,17 @@ class PoseRefineNet(nn.Module):
             end_points["RLA_features"] = features.transpose(1, 2)
             end_points = self.rndla(end_points)
             feat_x = end_points["RLA_embeddings"]
-            ap_x = torch.cat((emb, feat_x), dim=1)
-            ap_x = self.ap1(ap_x)
         elif self.cfg.pcld_encoder == "pointnet2":
             pcld = features
             feat_x = self.pointnet2(pcld)
+        else:
+            feat_x = features.transpose(1, 2)
+            
+        if self.cfg.basic_fusion:
             ap_x = torch.cat((emb, feat_x), dim=1)
             ap_x = self.ap1(ap_x)
         else:
-            feat_x = features.transpose(1, 2)
             ap_x = self.feat(feat_x, emb)
-
-        print(ap_x.shape)
 
         rx = self.r_out(ap_x).view(bs, self.num_obj, 6, 1)
         tx = self.t_out(ap_x).view(bs, self.num_obj, 3, 1)

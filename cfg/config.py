@@ -22,9 +22,9 @@ class Config(yaml.YAMLObject):
         self.use_normals = False #use normals for pcld features
         self.use_colors = False #use colors for pcld features
 
-        self.old_batch_mode = False #old_batch_mode = accumulate gradients
+        self.old_batch_mode = True #old_batch_mode = accumulate gradients
         self.batch_size = 6
-        self.workers = 8
+        self.workers = 1
 
         self.decay_margin = 0.015
         self.refine_margin = 0.000015 #refine margin should be less than or equal to decay margin (want decay to trigger first)
@@ -45,12 +45,13 @@ class Config(yaml.YAMLObject):
 
         self.batch_norm = False #global batch norm switch
 
-        self.basic_fusion = False #perform a basic fusion (cat) of depth and cnn features instead of dense fusion
+        #DO NOT USE BASIC FUSION WITH POINTNET, since the DenseFusion is the pointnet
+        self.basic_fusion = True #perform a basic fusion (cat) of depth and cnn features instead of dense fusion
 
         self.rndla_cfg = ConfigRandLA()
 
         #one of ["pointnet", "pointnet2", "randlanet"]
-        self.pcld_encoder = "pointnet"
+        self.pcld_encoder = "randlanet"
 
         self.resnet = "resnet18"
         self.pretrained_cnn = False #get pretrained Resnet18
