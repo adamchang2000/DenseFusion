@@ -162,7 +162,9 @@ def main():
                     loss.backward()
 
                 dis = dis.item()
-                trange.set_postfix(dis=dis)
+                train_dis_avg += dis
+                train_count += 1
+                trange.set_postfix(dis=(train_dis_avg / train_count))
 
                 if cfg.old_batch_mode:
                     if batch_id != 0 and batch_id % old_batch_size == 0:
