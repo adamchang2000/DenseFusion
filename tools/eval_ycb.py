@@ -23,6 +23,7 @@ from torch.autograd import Variable
 from datasets.ycb.dataset import PoseDataset
 from lib.network import PoseNet, PoseRefineNet
 import cv2
+from cfg.config import YCBConfig as Config, write_config
 
 from collections import defaultdict
 from knn_cuda import KNN
@@ -61,22 +62,22 @@ except:
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir')
-parser.add_argument('--workers', type=int, default = 1, help='number of data loading workers')
 parser.add_argument('--model', type=str, default = '',  help='resume PoseNet model')
 parser.add_argument('--refine_model', type=str, default = '',  help='resume PoseRefineNet model')
-parser.add_argument('--output', type=str, default='visualization', help='output for point vis')
-parser.add_argument('--use_normals', action="store_true", default=False, help="estimate normals and augment pointcloud")
-parser.add_argument('--use_colors', action="store_true", default=False, help="add colors to pointcloud")
-parser.add_argument('--iteration', type=int, default = 2, help='number of refinement iterations')
 parser.add_argument('--use_posecnn_rois', action="store_true", default=False, help="use the posecnn roi's")
 opt = parser.parse_args()
+
+cfg = Config()
+cfg.refine_start = opt.refine_model != ''
+
+batch_size = 1
+workers = 1
+cfg.posecnn_results = "YCB_Video_toolbox/results_PoseCNN_RSS2018"
 
 if opt.use_posecnn_rois:
     from datasets.ycb.dataset import PoseDatasetPoseCNNResults as PoseDataset
 else:
     from datasets.ycb.dataset import PoseDatasetAllObjects as PoseDataset
-
 
 def get_pointcloud(model_points, t, rot_mat):
 
@@ -87,43 +88,19 @@ def get_pointcloud(model_points, t, rot_mat):
     return pts
     
 def main():
-
-    if not os.path.isdir(opt.output):
-        os.mkdir(opt.output)
-
-    norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    border_list = [-1, 40, 80, 120, 160, 200, 240, 280, 320, 360, 400, 440, 480, 520, 560, 600, 640, 680]
-    xmap = np.array([[j for i in range(640)] for j in range(480)])
-    ymap = np.array([[i for i in range(640)] for j in range(480)])
-    cam_scale = 10000.0
-    num_obj = 21
-    img_width = 480
-    img_length = 640
-    num_points = 1000
-    num_points_mesh = 500
-    iteration = 2
-    batch_size = 1
-    dataset_config_dir = 'datasets/ycb/dataset_config'
-    ycb_toolbox_dir = 'YCB_Video_toolbox'
-    result_wo_refine_dir = 'experiments/eval_result/ycb/Densefusion_wo_refine_result'
-    result_refine_dir = 'experiments/eval_result/ycb/Densefusion_iterative_result'
-
-    estimator = PoseNet(num_points = num_points, num_obj = num_obj, use_normals = opt.use_normals, use_colors = opt.use_colors)
-    estimator = nn.DataParallel(estimator)
+    estimator = PoseNet(cfg = cfg)
     estimator.cuda()
     estimator.load_state_dict(torch.load(opt.model))
     estimator.eval()
 
     if opt.refine_model != '':
-        refiner = PoseRefineNet(num_points = num_points, num_obj = num_obj, use_normals = opt.use_normals, use_colors = opt.use_colors)
+        refiner = PoseRefineNet(cfg = cfg)
         refiner.cuda()
         refiner.load_state_dict(torch.load(opt.refine_model))
         refiner.eval()
 
-    test_dataset = PoseDataset('test', num_points, False, opt.dataset_root, 0.0, opt.refine_model != '', use_normals = opt.use_normals, use_colors = opt.use_colors)
-    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=opt.workers)
-
-    colors = [(96, 60, 20), (156, 39, 6), (212, 91, 18), (243, 188, 46), (95, 84, 38)]
+    test_dataset = PoseDataset('test', cfg = cfg)
+    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=workers)
 
     adds = defaultdict(list)
     add = defaultdict(list)
@@ -137,11 +114,6 @@ def main():
 
     with torch.no_grad():
         for now, data_objs in enumerate(test_dataloader):
-
-            color_img_file = '{0}/{1}-color.png'.format(test_dataset.root, test_dataset.list[now])
-            color_img = cv2.imread(color_img_file)
-
-
             for obj_idx, end_points in enumerate(data_objs):
                 torch.cuda.empty_cache()
 
@@ -153,29 +125,43 @@ def main():
 
                 end_points = end_points_cuda
 
-                end_points = randla_processing(end_points)
+                if cfg.pcld_encoder == "randlanet":
+                    end_points = randla_processing(end_points, cfg)
                                                                         
                 end_points = estimator(end_points)
 
                 pred_r = end_points["pred_r"]
                 pred_t = end_points["pred_t"]
                 pred_c = end_points["pred_c"]
-                points = end_points["cloud"]
+                points = end_points["cloud"] + end_points["cloud_mean"]
                 model_points = end_points["model_points"]
                 target = end_points["target"]
                 idx = end_points["obj_idx"]
 
-                if opt.use_normals:
+                bs, num_p, _ = pred_t.shape
+
+                if cfg.use_normals:
                     normals = end_points["normals"]
 
-                bs, num_p, _ = pred_c.shape
-                pred_c = pred_c.view(bs, num_p)
-                how_max, which_max = torch.max(pred_c, 1)
-                pred_t = pred_t.view(bs * num_p, 1, 3)
+                if cfg.use_confidence:
+                    pred_c = end_points["pred_c"]
+                    pred_c = pred_c.view(bs, num_p)
+                    how_max, which_max = torch.max(pred_c, 1)
+                    pred_t = pred_t.view(bs * num_p, 1, 3)
 
-                my_r = pred_r[0][which_max[0]].view(-1).unsqueeze(0).unsqueeze(0)
+                    my_r = pred_r[0][which_max[0]].view(-1).unsqueeze(0).unsqueeze(0)
 
-                my_rot_mat = compute_rotation_matrix_from_ortho6d(my_r)[0].cpu().data.numpy()
+                    my_rot_mat = compute_rotation_matrix_from_ortho6d(my_r)[0].cpu().data.numpy()
+
+                    points = points.contiguous().view(bs*num_p, 1, 3)
+
+                    my_t = (points + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
+                else:
+
+                    my_r = torch.mean(pred_r, dim=1, keepdim=True)
+                    pred_t = points + pred_t
+                    my_t = torch.mean(pred_t, dim=1).view(-1).cpu().data.numpy()
+                    my_rot_mat = compute_rotation_matrix_from_ortho6d(my_r)[0].cpu().data.numpy()
 
                 #print('my rot mat', my_rot_mat)
 

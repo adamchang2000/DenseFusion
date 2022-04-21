@@ -52,24 +52,8 @@ if opt.use_posecnn_rois:
 else:
     from datasets.ycb.dataset import PoseDatasetAllObjects as PoseDataset
 
-norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-border_list = [-1, 40, 80, 120, 160, 200, 240, 280, 320, 360, 400, 440, 480, 520, 560, 600, 640, 680]
-xmap = np.array([[j for i in range(640)] for j in range(480)])
-ymap = np.array([[i for i in range(640)] for j in range(480)])
-cam_cx = 312.9869
-cam_cy = 241.3109
-cam_fx = 1066.778
-cam_fy = 1067.487
-cam_scale = 10000.0
-num_obj = 21
-img_width = 480
-img_length = 640
-num_points = 1000
-num_points_mesh = 500
-iteration = 2
 batch_size = 1
 workers = 1
-
 cfg.posecnn_results = "YCB_Video_toolbox/results_PoseCNN_RSS2018"
 
 def get_pointcloud(model_points, t, rot_mat):
@@ -104,10 +88,7 @@ def main():
         refiner.load_state_dict(torch.load(opt.refine_model))
         refiner.eval()
 
-    if opt.use_posecnn_rois:
-        test_dataset = PoseDataset('test', cfg = cfg)
-    else:
-        test_dataset = PoseDataset('test', cfg = cfg)
+    test_dataset = PoseDataset('test', cfg = cfg)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=workers)
 
     colors = [(96, 60, 20), (156, 39, 6), (212, 91, 18), (243, 188, 46), (95, 84, 38)]
