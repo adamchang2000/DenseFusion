@@ -4,9 +4,9 @@ import sys
 
 class ConfigRandLA:
     def __init__(self):
-        self.k_n = 16  # KNN
+        self.k_n = 32  # KNN
         self.num_layers = 2  # Number of layers
-        self.num_points = 2048  # Number of input points
+        self.num_points = 1024  # Number of input points
         self.num_classes = 22  # Number of valid classes
 
         self.sub_sampling_ratio = [4, 4]  # sampling ratio of random sampling at each layer
@@ -24,7 +24,7 @@ class Config(yaml.YAMLObject):
 
         self.old_batch_mode = True #old_batch_mode = accumulate gradients
         self.batch_size = 6
-        self.workers = 8
+        self.workers = 6
 
         self.decay_margin = 0.015
         self.refine_margin = 0.000015 #refine margin should be less than or equal to decay margin (want decay to trigger first)
@@ -41,7 +41,7 @@ class Config(yaml.YAMLObject):
         self.add_front_aug = False #add random objects as occlusions
         self.symm_rotation_aug = False #add random rotation to GT around axis of symmetry
 
-        self.image_size = 224 #shrink or expand ROI's to allow bs > 1
+        self.image_size = 300 #shrink or expand ROI's to allow bs > 1
 
         self.batch_norm = False #global batch norm switch
 
@@ -62,6 +62,9 @@ class Config(yaml.YAMLObject):
         self.fill_depth = True #use hole filling algorithm to fill depth in 2D
 
         self.blur_depth = False #run a gaussian kernel over depth map in 2D after fill_depth (probably shouldn't since fill depth already has a blur)
+
+        self.use_hrnet_labels = True #train and test with hrnet labels
+        self.hrnet_labels_path = "labels_hrnet"
 
 #dataset specific configs
 #currently, only YCB tested :) TODO: FIX LINEMOD AND CUSTOM

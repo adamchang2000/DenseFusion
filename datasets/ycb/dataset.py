@@ -62,7 +62,6 @@ def get_random_rotation_around_symmetry_axis(axis, symm_type, num_symm):
         return rotation_matrix_of_axis_angle(axis, angle).squeeze()
     else:
         raise Exception("Invalid symm_type " + symm_type)
-    
 
 class PoseDataset(data.Dataset):
     def __init__(self, mode, cfg):
@@ -88,9 +87,10 @@ class PoseDataset(data.Dataset):
                 input_line = input_line[:-1]
             if input_line[:5] == 'data/':
                 self.real.append(input_line)
+                self.list.append(input_line)
             else:
                 self.syn.append(input_line)
-            self.list.append(input_line)
+            #self.list.append(input_line)
         input_file.close()
 
         self.length = len(self.list)
@@ -254,6 +254,9 @@ class PoseDataset(data.Dataset):
             img = self.trancolor(img)
 
         img = np.array(img)[:, :, :3][rmin:rmax, cmin:cmax,:]
+
+        #end_points["cropped_image"] = img
+
         img = np.transpose(img, (2, 0, 1))
 
         if self.list[index][:8] == 'data_syn':
@@ -366,12 +369,16 @@ class PoseDataset(data.Dataset):
     def __getitem__(self, index):
         img = Image.open('{0}/{1}-color.png'.format(self.cfg.root, self.list[index]))
         depth = np.array(Image.open('{0}/{1}-depth.png'.format(self.cfg.root, self.list[index])))
-        label = np.array(Image.open('{0}/{1}-label.png'.format(self.cfg.root, self.list[index])))
+        if self.cfg.use_hrnet_labels:
+            label = np.array(Image.open(os.path.join(self.cfg.root, self.cfg.hrnet_labels_path, self.list[index] + "_seg_label.png")))
+        else:
+            label = np.array(Image.open('{0}/{1}-label.png'.format(self.cfg.root, self.list[index])))
         meta = scio.loadmat('{0}/{1}-meta.mat'.format(self.cfg.root, self.list[index]))
         obj = meta['cls_indexes'].flatten().astype(np.int32)
-
-        while 1:
-            idx = np.random.randint(0, len(obj))
+        idxs = [i for i in range(len(obj))]
+        np.random.shuffle(idxs)
+        
+        for idx in idxs:
             obj_idx = obj[idx]
 
             end_points = self.get_item(index, idx, obj_idx, img, depth, label, meta)
@@ -380,6 +387,8 @@ class PoseDataset(data.Dataset):
                 return end_points
             else:
                 continue
+        print("no valid obj with framae {0}".format(self.list[index]))
+        return {}
 
     def __len__(self):
         return self.length
@@ -392,6 +401,11 @@ class PoseDataset(data.Dataset):
             return self.num_pt_mesh_large
         else:
             return self.num_pt_mesh_small
+
+    @staticmethod
+    def custom_collate_fn(data):
+        data = [d for d in data if len(d) > 0]
+        return torch.utils.data.dataloader.default_collate(data)
 
 class PoseDatasetAllObjects(PoseDataset):
     def __getitem__(self, index):

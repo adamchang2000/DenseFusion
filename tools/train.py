@@ -80,10 +80,10 @@ def main():
 
     if cfg.dataset == 'ycb':
         dataset = PoseDataset_ycb('train', cfg = cfg)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.workers)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=cfg.batch_size, collate_fn=dataset.custom_collate_fn, shuffle=True, num_workers=cfg.workers)
     if cfg.dataset == 'ycb':
         test_dataset = PoseDataset_ycb('test', cfg = cfg)
-    testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.workers)
+    testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=cfg.batch_size, collate_fn=dataset.custom_collate_fn, shuffle=False, num_workers=cfg.workers)
     
     cfg.sym_list = dataset.get_sym_list()
     cfg.num_points_mesh = dataset.get_num_points_mesh()
@@ -138,6 +138,9 @@ def main():
             trange = tqdm(enumerate(dataloader), total=len(dataloader), desc="training")
             for batch_id, end_points in trange:
                 start_time = time.time()
+
+                if len(end_points) == 0:
+                    continue
 
                 end_points_cuda = {}
                 for k, v in end_points.items():
