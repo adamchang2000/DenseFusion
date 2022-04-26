@@ -103,6 +103,7 @@ def main():
             color_img = cv2.imread(color_img_file)
 
             for obj_idx, end_points in enumerate(data_objs):
+
                 torch.cuda.empty_cache()
 
                 intr = end_points["intr"]

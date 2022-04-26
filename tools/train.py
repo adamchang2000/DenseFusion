@@ -59,19 +59,12 @@ def main():
     if opt.resume_posenet != '':
         estimator.load_state_dict(torch.load('{0}/{1}'.format(cfg.outf, opt.resume_posenet)))
 
-    if cfg.old_batch_mode:
-        old_batch_size = cfg.batch_size
-        cfg.batch_size = 1
-        cfg.image_size = -1
-
     if opt.resume_refinenet != '':
         print("performing refiner training!")
         refiner.load_state_dict(torch.load('{0}/{1}'.format(cfg.outf, opt.resume_refinenet)))
         cfg.refine_start = True
         cfg.decay_start = True
         cfg.w *= cfg.w_rate
-        if cfg.old_batch_mode:
-            old_batch_size = int(old_batch_size / cfg.iteration)
         optimizer = optim.Adam(refiner.parameters(), lr=cfg.lr)
     else:
         cfg.refine_start = False
@@ -169,15 +162,10 @@ def main():
                 train_count += 1
                 trange.set_postfix(dis=(train_dis_avg / train_count))
 
-                if cfg.old_batch_mode:
-                    if batch_id != 0 and batch_id % old_batch_size == 0:
-                        optimizer.step()
-                        optimizer.zero_grad()
-                else:
-                    optimizer.step()
-                    optimizer.zero_grad()
+                optimizer.step()
+                optimizer.zero_grad()
 
-                if batch_id != 0 and batch_id % (len(dataloader) // (40 * (old_batch_size if cfg.old_batch_mode else 1))) == 0:
+                if batch_id != 0 and batch_id % (len(dataloader) // 40) == 0:
                     logger.info('Epoch {} | Batch {} | dis:{}'.format(epoch, batch_id, dis))
                     if cfg.refine_start:
                         torch.save(refiner.state_dict(), '{0}/pose_refine_model_current.pth'.format(cfg.outf))
@@ -241,8 +229,6 @@ def main():
 
         if (epoch >= cfg.refine_epoch or best_test < cfg.refine_margin) and not cfg.refine_start:
             cfg.refine_start = True
-            if cfg.old_batch_mode:
-                old_batch_size = int(old_batch_size / cfg.iteration)
             optimizer = optim.Adam(refiner.parameters(), lr=cfg.lr)
 
             if cfg.dataset == 'ycb':

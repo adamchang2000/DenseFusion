@@ -16,6 +16,7 @@ import scipy.io as scio
 import open3d as o3d
 from lib.depth_utils import compute_normals, fill_missing
 import cv2
+import torch.nn.functional as F
 
 def standardize_image_size(target_image_size, rmin, rmax, cmin, cmax, image_height, image_width):
     height, width = rmax - rmin, cmax - cmin
@@ -233,10 +234,6 @@ class PoseDataset(data.Dataset):
         rmin, rmax, cmin, cmax = get_bbox(mask_label)
         h, w, _= np.array(img).shape
         rmin, rmax, cmin, cmax = max(0, rmin), min(h, rmax), max(0, cmin), min(w, cmax)
-
-        if self.cfg.image_size != -1:
-            rmin, rmax, cmin, cmax = standardize_image_size(self.cfg.image_size, rmin, rmax, cmin, cmax, h, w)
-
         choose = mask[rmin:rmax, cmin:cmax].flatten().nonzero()[0]
 
         if len(choose) == 0:
@@ -365,19 +362,22 @@ class PoseDataset(data.Dataset):
 
         return end_points
 
-
-    def __getitem__(self, index):
-        img = Image.open('{0}/{1}-color.png'.format(self.cfg.root, self.list[index]))
-        depth = np.array(Image.open('{0}/{1}-depth.png'.format(self.cfg.root, self.list[index])))
+    def get_label(self, index):
         if self.cfg.use_hrnet_labels:
             label = np.array(Image.open(os.path.join(self.cfg.root, self.cfg.hrnet_labels_path, self.list[index] + "_seg_label.png")))
         else:
             label = np.array(Image.open('{0}/{1}-label.png'.format(self.cfg.root, self.list[index])))
+        return label
+
+    def __getitem__(self, index):
+        img = Image.open('{0}/{1}-color.png'.format(self.cfg.root, self.list[index]))
+        depth = np.array(Image.open('{0}/{1}-depth.png'.format(self.cfg.root, self.list[index])))
+        label = self.get_label(index)
         meta = scio.loadmat('{0}/{1}-meta.mat'.format(self.cfg.root, self.list[index]))
         obj = meta['cls_indexes'].flatten().astype(np.int32)
         idxs = [i for i in range(len(obj))]
         np.random.shuffle(idxs)
-        
+
         for idx in idxs:
             obj_idx = obj[idx]
 
@@ -405,6 +405,24 @@ class PoseDataset(data.Dataset):
     @staticmethod
     def custom_collate_fn(data):
         data = [d for d in data if len(d) > 0]
+
+        imgs = [d["img"] for d in data]
+
+        max_height = max([i.shape[1] for i in imgs])
+        max_width = max([i.shape[2] for i in imgs])
+
+        orig_img_heights = [i.shape[1] for i in imgs]
+        orig_img_widths = [i.shape[2] for i in imgs]
+
+        imgs = [F.pad(i, (0, max_width - i.shape[2], 0, max_height - i.shape[1])) for i in imgs]
+
+        chooses = [d["choose"] for d in data]
+
+        for d, img, choose, orig_img_height, orig_img_width in zip(data, imgs, chooses, orig_img_heights, orig_img_widths):
+            d["img"] = img
+            choose = (torch.floor(choose / orig_img_width) * max_width + choose % orig_img_width).type(torch.LongTensor)
+            d["choose"] = choose
+
         return torch.utils.data.dataloader.default_collate(data)
 
 class PoseDatasetAllObjects(PoseDataset):
@@ -414,7 +432,7 @@ class PoseDatasetAllObjects(PoseDataset):
 
         img = Image.open(color_filename)
         depth = np.array(Image.open('{0}/{1}-depth.png'.format(self.cfg.root, self.list[index])))
-        label = np.array(Image.open('{0}/{1}-label.png'.format(self.cfg.root, self.list[index])))
+        label = self.get_label(index)
         meta = scio.loadmat('{0}/{1}-meta.mat'.format(self.cfg.root, self.list[index]))
 
         obj = meta['cls_indexes'].flatten().astype(np.int32)

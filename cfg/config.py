@@ -22,7 +22,6 @@ class Config(yaml.YAMLObject):
         self.use_normals = False #use normals for pcld features
         self.use_colors = False #use colors for pcld features
 
-        self.old_batch_mode = True #old_batch_mode = accumulate gradients
         self.batch_size = 6
         self.workers = 6
 
@@ -40,8 +39,6 @@ class Config(yaml.YAMLObject):
 
         self.add_front_aug = False #add random objects as occlusions
         self.symm_rotation_aug = False #add random rotation to GT around axis of symmetry
-
-        self.image_size = 300 #shrink or expand ROI's to allow bs > 1
 
         self.batch_norm = False #global batch norm switch
 
@@ -63,7 +60,7 @@ class Config(yaml.YAMLObject):
 
         self.blur_depth = False #run a gaussian kernel over depth map in 2D after fill_depth (probably shouldn't since fill depth already has a blur)
 
-        self.use_hrnet_labels = True #train and test with hrnet labels
+        self.use_hrnet_labels = False #train and test with hrnet labels
         self.hrnet_labels_path = "labels_hrnet"
 
 #dataset specific configs
