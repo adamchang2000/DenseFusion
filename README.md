@@ -5,7 +5,7 @@
 </p>
 
 ## Adam NOTES
-This branch works with pytorch 1.7.1. We run it with CUDA 10.1.
+This branch works with pytorch 1.7.1. We run it with CUDA 11.6.
 
 ## News
 We have released the code and arXiv preprint for our new project [6-PACK](https://sites.google.com/view/6packtracking) which is based on this work and used for category-level 6D pose tracking.
@@ -32,8 +32,7 @@ This repository is the implementation code of the paper "DenseFusion: 6D Object 
 
 ## Requirements
 
-* Python 2.7/3.5/3.6 (If you want to use Python2.7 to run this repo, please rebuild the `lib/knn/` (with PyTorch 0.4.1).)
-* [PyTorch 0.4.1](https://pytorch.org/) ([PyTroch 1.0 branch](<https://github.com/j96w/DenseFusion/tree/Pytorch-1.0>))
+* Python 3
 * PIL
 * scipy
 * numpy
@@ -43,6 +42,8 @@ This repository is the implementation code of the paper "DenseFusion: 6D Object 
 * CUDA 7.5/8.0/9.0 (Required. CPU-only will lead to extreme slow training speed because of the loss calculation of the symmetry objects (pixel-wise nearest neighbour loss).)
 
 ## Code Structure
+* **cfg**
+	* **config.py**: Most configuration stuff for running the code. Some options remain as command line arguments, though
 * **datasets**
 	* **datasets/ycb**
 		* **datasets/ycb/dataset.py**: Data loader for YCB_Video dataset.
@@ -54,6 +55,7 @@ This repository is the implementation code of the paper "DenseFusion: 6D Object 
 		* **datasets/linemod/dataset.py**: Data loader for LineMOD dataset.
 		* **datasets/linemod/dataset_config**: 
 			* **datasets/linemod/dataset_config/models_info.yml**: Object model info of LineMOD dataset.
+	* **datasets/custom**: Custom dataset stuff (pretty deprecated at this point)
 * **replace_ycb_toolbox**: Replacement codes for the evaluation with [YCB_Video_toolbox](https://github.com/yuxng/YCB_Video_toolbox).
 * **trained_models**
 	* **trained_models/ycb**: Checkpoints of YCB_Video dataset.
@@ -67,11 +69,14 @@ This repository is the implementation code of the paper "DenseFusion: 6D Object 
     * **lib/pspnet.py**: Decoder network architecture.
     * **lib/utils.py**: Logger code.
     * **lib/knn/**: CUDA K-nearest neighbours library adapted from [pytorch_knn_cuda](https://github.com/chrischoy/pytorch_knn_cuda).
+* **pointnet2**: Pointnet2 modules, install using `python pointnet2/setup.py install`
 * **tools**
 	* **tools/_init_paths.py**: Add local path.
 	* **tools/eval_ycb.py**: Evaluation code for YCB_Video dataset.
 	* **tools/eval_linemod.py**: Evaluation code for LineMOD dataset.
 	* **tools/train.py**: Training code for YCB_Video dataset and LineMOD dataset.
+	* **tools/visualize_ycb_points.py**: Visualizes code by projecting model points onto camera frame using predicted pose
+	* **tools/visualize.py** and **tools/visualize_ycb.py**: Output 3D pointclouds of Pred and GT
 * **experiments**
 	* **experiments/eval_result**
 		* **experiments/eval_result/ycb**
