@@ -88,10 +88,9 @@ class PoseDataset(data.Dataset):
                 input_line = input_line[:-1]
             if input_line[:5] == 'data/':
                 self.real.append(input_line)
-                self.list.append(input_line)
             else:
                 self.syn.append(input_line)
-            #self.list.append(input_line)
+            self.list.append(input_line)
         input_file.close()
 
         self.length = len(self.list)
@@ -250,6 +249,8 @@ class PoseDataset(data.Dataset):
         if self.add_noise:
             img = self.trancolor(img)
 
+        orig_img = np.array(img)[:,:,:3]
+
         img = np.array(img)[:, :, :3][rmin:rmax, cmin:cmax,:]
 
         #end_points["cropped_image"] = img
@@ -292,6 +293,10 @@ class PoseDataset(data.Dataset):
         ymap_masked = self.ymap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         choose = np.array([choose])
 
+        # depth_masked = depth.flatten().astype(np.float32)[:, np.newaxis]
+        # xmap_masked = self.xmap.flatten().astype(np.float32)[:, np.newaxis]
+        # ymap_masked = self.ymap.flatten().astype(np.float32)[:, np.newaxis]
+
         pt2 = depth_masked / cam_scale
         pt0 = (ymap_masked - cam_cx) * pt2 / cam_fx
         pt1 = (xmap_masked - cam_cy) * pt2 / cam_fy
@@ -299,6 +304,13 @@ class PoseDataset(data.Dataset):
         if self.add_noise and self.cfg.noise_trans > 0:
             add_t = np.random.uniform(-self.cfg.noise_trans, self.cfg.noise_trans, (self.cfg.num_points, 3))
             cloud = np.add(cloud, add_t)
+
+        # colors = orig_img.reshape((-1, 3))
+
+        # camera_pcld = o3d.geometry.PointCloud()
+        # camera_pcld.points = o3d.utility.Vector3dVector(cloud)
+        # camera_pcld.colors = o3d.utility.Vector3dVector(colors.astype(np.float32) / 255.)
+        # o3d.io.write_point_cloud("camera_pcld_{0}.ply".format(index), camera_pcld)
 
         #NORMALS
         if self.cfg.use_normals:
@@ -316,6 +328,10 @@ class PoseDataset(data.Dataset):
 
         target = np.dot(model_points, target_r.T)
         target = np.add(target, target_t)
+
+        # target_pcld = o3d.geometry.PointCloud()
+        # target_pcld.points = o3d.utility.Vector3dVector(target)
+        # o3d.io.write_point_cloud("target_pcld_{0}_{1}.ply".format(index, obj_idx), target_pcld)
             
         target_front = np.dot(front, target_r.T)
         target_front = np.add(target_front, target_t)

@@ -24,7 +24,7 @@ from datasets.ycb.dataset import PoseDataset
 from lib.network import PoseNet, PoseRefineNet
 import cv2
 from lib.randla_utils import randla_processing
-from cfg.config import YCBConfig as Config, write_config
+from cfg.config import YCBConfig as Config, load_config
 
 from lib.loss import Loss
 
@@ -40,11 +40,15 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', type=str, default = '',  help='resume PoseNet model')
 parser.add_argument('--refine_model', type=str, default = '',  help='resume PoseRefineNet model')
+parser.add_argument('--config', type=str, default='', help='load a saved config')
 parser.add_argument('--output', type=str, default='visualization', help='output for point vis')
 parser.add_argument('--use_posecnn_rois', action="store_true", default=False, help="use the posecnn roi's")
 opt = parser.parse_args()
 
 cfg = Config()
+if opt.config:
+    cfg = load_config(cfg, opt.config)
+
 cfg.refine_start = opt.refine_model != ''
 
 if opt.use_posecnn_rois:
@@ -206,6 +210,10 @@ def main():
 
                 my_r = copy.deepcopy(my_rot_mat)
                 pred = get_pointcloud(model_points, my_t, my_r)
+
+                pred_pcld = o3d.geometry.PointCloud()
+                pred_pcld.points = o3d.utility.Vector3dVector(pred)
+                o3d.io.write_point_cloud("pred_pcld_{0}_{1}.ply".format(now, obj_idx), pred_pcld)
 
                 projected_pred = project_points(pred, cam_fx, cam_fy, cam_cx, cam_cy)
 

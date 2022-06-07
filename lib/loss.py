@@ -12,7 +12,10 @@ import random
 import torch.backends.cudnn as cudnn
 from knn_cuda import KNN
 
-from lib.loss_helpers import FRONT_LOSS_COEFF
+from scipy.spatial.transform import Rotation as R
+
+from lib.loss_helpers import FRONT_LOSS_COEFF, average_quaternion
+
 
 #pred_r : batch_size * n * 4 -> batch_size * n * 6
 def loss_calculation(end_points, w, refine, num_point_mesh, sym_list, use_normals, use_confidence):
@@ -129,8 +132,16 @@ def loss_calculation(end_points, w, refine, num_point_mesh, sym_list, use_normal
         points = points.view(bs, num_p, 1, 3)
         ori_base = ori_base.view(bs, num_p, 3, 3)
 
+        #use quaternion averaging now for average rotation
+        ori_base = ori_base.cpu().detach().numpy()
+        ori_base_avgs = np.zeros((bs, 3, 3)).astype(np.float32)
+        for i in range(bs):
+            quat = R.from_matrix(ori_base[i]).as_quat()
+            avg_quat = average_quaternion(quat)
+            avg_rot_mat = R.from_quat(avg_quat).as_matrix()
+            ori_base_avgs[i] = avg_rot_mat
+        ori_base = torch.from_numpy(ori_base_avgs).cuda().contiguous()
         ori_t = torch.mean(ori_t + points, dim=1, keepdim=True)
-        ori_base = torch.mean(ori_base, dim=1).view(bs, 3, 3).contiguous()
 
         t = ori_t.contiguous()
 

@@ -13,17 +13,20 @@ class ConfigRandLA:
         self.d_out = [32, 64]  # feature dimension
         self.num_sub_points = [self.num_points // 4, self.num_points // 16]
 
+    def load_cfg(self, cfg):
+        self.__dict__.update(**cfg)
+
 class Config(yaml.YAMLObject):
 
     def __init__(self):
         self.iteration = 2 #number of refine iterations
         self.nepoch = 40 #total number of epochs to train
 
-        self.use_normals = False #use normals for pcld features
-        self.use_colors = False #use colors for pcld features
+        self.use_normals = True #use normals for pcld features
+        self.use_colors = True #use colors for pcld features
 
-        self.batch_size = 6
-        self.workers = 6
+        self.batch_size = 4
+        self.workers = 4
 
         self.decay_margin = 0.015
         self.refine_margin = 0.000015 #refine margin should be less than or equal to decay margin (want decay to trigger first)
@@ -40,7 +43,7 @@ class Config(yaml.YAMLObject):
         self.add_front_aug = False #add random objects as occlusions
         self.symm_rotation_aug = False #add random rotation to GT around axis of symmetry
 
-        self.batch_norm = False #global batch norm switch
+        self.batch_norm = True #global batch norm switch
 
         #DO NOT USE BASIC FUSION WITH POINTNET, since the DenseFusion is the pointnet
         self.basic_fusion = False #perform a basic fusion (cat) of depth and cnn features instead of dense fusion
@@ -48,13 +51,13 @@ class Config(yaml.YAMLObject):
         self.rndla_cfg = ConfigRandLA()
 
         #one of ["pointnet", "pointnet2", "randlanet"]
-        self.pcld_encoder = "pointnet"
+        self.pcld_encoder = "randlanet"
 
-        self.resnet = "resnet18"
-        self.pretrained_cnn = False #get pretrained Resnet18
+        self.resnet = "resnet34"
+        self.pretrained_cnn = True
         self.pretrained_model_dir = "pretrained_models/"
 
-        self.use_confidence = True #use confidence regression vs. standard voting
+        self.use_confidence = False #use confidence regression vs. standard voting
 
         self.fill_depth = True #use hole filling algorithm to fill depth in 2D
 
@@ -62,6 +65,11 @@ class Config(yaml.YAMLObject):
 
         self.use_hrnet_labels = False #train and test with hrnet labels
         self.hrnet_labels_path = "labels_hrnet"
+
+    def load_cfg(self, cfg):
+        rndla_cfg = cfg.pop("rndla_cfg")
+        self.rndla_cfg.load_cfg(rndla_cfg)
+        self.__dict__.update(**cfg)
 
 #dataset specific configs
 #currently, only YCB tested :) TODO: FIX LINEMOD AND CUSTOM
@@ -106,6 +114,13 @@ def write_config(cfg, file):
     yaml.emitter.Emitter.process_tag = noop
     with open(file, "w") as f:
         yaml.dump(cfg, f)
+
+def load_config(cfg, file):
+    with open(file, "r") as f:
+        data = yaml.safe_load(f)
+
+    cfg.load_cfg(data)
+    return cfg
 
 def main():
     cfg = YCBConfig()
