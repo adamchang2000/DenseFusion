@@ -23,7 +23,7 @@ import cv2
 
 class PoseDataset(data.Dataset):
     def __init__(self, mode, num, add_noise, root, noise_trans, refine):
-        self.objlist = [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
+        self.objlist = [1, 2]
         self.mode = mode
 
         self.list_rgb = []
